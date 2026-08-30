@@ -43,8 +43,10 @@ app.post('/api/parse-event', async (req, res) => {
     }
 
     let extractedText = '';
+
+    // PROBA 1: Pobieranie bezpośrednie przez Axios z nagłówkami przeglądarki
     try {
-      logToFile('Pobieranie zawartości strony...');
+      logToFile('Pobieranie zawartości strony (Proba 1 - Axios)...');
       const response = await axios.get(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -62,10 +64,24 @@ app.post('/api/parse-event', async (req, res) => {
         .replace(/\s+/g, ' ')
         .slice(0, 30000);
 
-      logToFile(`Pobrano i oczyszczono tekst (długość: ${extractedText.length} znaków). Fragment:`, extractedText.slice(0, 300));
     } catch (fetchErr) {
-      logToFile('Ostrzeżenie: Nie udało się pobrać treści strony przez axios. Powód:', fetchErr.message);
+      logToFile('Ostrzeżenie: Próba 1 (Axios) nie powiodła się:', fetchErr.message);
     }
+
+    // PROBA 2: Jeśli tekst jest pusty lub strona zablokowana (np. ra.co / Cloudflare), używamy Jina AI Reader jako fallbacku
+    if (!extractedText || extractedText.trim().length < 100) {
+      try {
+        logToFile('Proba 2: Używanie czytnika Jina AI Reader dla trudnych stron JS/Cloudflare...');
+        const jinaUrl = `https://r.jina.ai/${url}`;
+        const jinaResponse = await axios.get(jinaUrl, { timeout: 15000 });
+        extractedText = jinaResponse.data.slice(0, 30000);
+        logToFile('Sukces Jina AI Reader! Pabrano tekst.');
+      } catch (jinaErr) {
+        logToFile('Ostrzeżenie: Próba 2 (Jina AI) również nie powiodła się:', jinaErr.message);
+      }
+    }
+
+    logToFile(`Ostateczna długość przetworzonego tekstu: ${extractedText.length} znaków.`);
 
     const schema = {
       type: SchemaType.OBJECT,
@@ -90,7 +106,7 @@ app.post('/api/parse-event', async (req, res) => {
     };
 
     logToFile('Wysyłanie zapytania do modelu Gemini...');
-	const model = genAI.getGenerativeModel({
+    const model = genAI.getGenerativeModel({
       model: 'gemini-3.6-flash',
       generationConfig: {
         responseMimeType: 'application/json',
