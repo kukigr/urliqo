@@ -2,8 +2,6 @@ import express from 'express';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import fs from 'fs';
-import path from 'path';
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 
 dotenv.config();
@@ -13,21 +11,17 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Funkcja pomocnicza do zapisu logów do pliku
-function logToFile(message, data = null) {
+// Funkcja logująca bezpośrednio do konsoli Render.com
+function logMessage(message, data = null) {
   const timestamp = new Date().toISOString();
-  let logMessage = `[${timestamp}] ${message}\n`;
+  console.log(`[${timestamp}] ${message}`);
   if (data) {
     if (data instanceof Error) {
-      logMessage += `Stack: ${data.stack}\nMessage: ${data.message}\n`;
+      console.error(`STACK: ${data.stack}\nMESSAGE: ${data.message}`);
     } else {
-      logMessage += `Data: ${JSON.stringify(data, null, 2)}\n`;
+      console.log(`DATA: ${JSON.stringify(data, null, 2)}`);
     }
   }
-  logMessage += '--------------------------------------------------\n';
-  
-  console.log(logMessage);
-  fs.appendFileSync(path.join(process.cwd(), 'error.log'), logMessage, 'utf-8');
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -35,18 +29,18 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 app.post('/api/parse-event', async (req, res) => {
   try {
     const { url } = req.body;
-    logToFile(`Otrzymano żądanie przetworzenia URL: ${url}`);
+    logMessage(`Otrzymano żądanie dla URL: ${url}`);
 
     if (!url) {
-      logToFile('Błąd: Brak adresu URL w żądaniu.');
+      logMessage('Błąd: Brak adresu URL');
       return res.status(400).json({ error: 'Brak adresu URL' });
     }
 
     let extractedText = '';
 
-    // PROBA 1: Pobieranie bezpośrednie przez Axios z nagłówkami przeglądarki
+    // PROBA 1: Pobieranie przez Axios
     try {
-      logToFile('Pobieranie zawartości strony (Proba 1 - Axios)...');
+      logMessage('Pobieranie strony (Próba 1 - Axios)...');
       const response = await axios.get(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -56,7 +50,6 @@ app.post('/api/parse-event', async (req, res) => {
         timeout: 10000
       });
 
-      // Oczyszczanie tekstu z tagów HTML
       extractedText = response.data
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
         .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
@@ -65,23 +58,23 @@ app.post('/api/parse-event', async (req, res) => {
         .slice(0, 30000);
 
     } catch (fetchErr) {
-      logToFile('Ostrzeżenie: Próba 1 (Axios) nie powiodła się:', fetchErr.message);
+      logMessage('Axios zablokowany lub błąd pobierania:', fetchErr.message);
     }
 
-    // PROBA 2: Jeśli tekst jest pusty lub strona zablokowana (np. ra.co / Cloudflare), używamy Jina AI Reader jako fallbacku
+    // PROBA 2: Jina AI Reader (dla stron typu Resident Advisor / Cloudflare)
     if (!extractedText || extractedText.trim().length < 100) {
       try {
-        logToFile('Proba 2: Używanie czytnika Jina AI Reader dla trudnych stron JS/Cloudflare...');
+        logMessage('Próba 2: Używanie Jina AI Reader...');
         const jinaUrl = `https://r.jina.ai/${url}`;
         const jinaResponse = await axios.get(jinaUrl, { timeout: 15000 });
         extractedText = jinaResponse.data.slice(0, 30000);
-        logToFile('Sukces Jina AI Reader! Pabrano tekst.');
+        logMessage('Sukces Jina AI Reader!');
       } catch (jinaErr) {
-        logToFile('Ostrzeżenie: Próba 2 (Jina AI) również nie powiodła się:', jinaErr.message);
+        logMessage('Błąd Jina AI Reader:', jinaErr.message);
       }
     }
 
-    logToFile(`Ostateczna długość przetworzonego tekstu: ${extractedText.length} znaków.`);
+    logMessage(`Długość tekstu do analizy: ${extractedText.length} znaków.`);
 
     const schema = {
       type: SchemaType.OBJECT,
@@ -95,8 +88,8 @@ app.post('/api/parse-event', async (req, res) => {
             type: SchemaType.OBJECT,
             properties: {
               day_number: { type: SchemaType.INTEGER },
-              start_time_utc: { type: SchemaType.STRING, description: 'Data i godzina rozpoczęcia UTC w formacie ISO (np. 2026-09-25T08:00:00Z)' },
-              end_time_utc: { type: SchemaType.STRING, description: 'Data i godzina zakończenia UTC w formacie ISO (np. 2026-09-25T16:00:00Z)' }
+              start_time_utc: { type: SchemaType.STRING, description: 'Data i godzina rozpoczęcia UTC w formacie ISO' },
+              end_time_utc: { type: SchemaType.STRING, description: 'Data i godzina zakończenia UTC w formacie ISO' }
             },
             required: ['day_number', 'start_time_utc', 'end_time_utc']
           }
@@ -105,9 +98,11 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    logToFile('Wysyłanie zapytania do modelu Gemini...');
+    logMessage('Wysyłanie zapytania do modelu Gemini...');
+    
+    // Zmiana na stabilny model gemini-1.5-flash
     const model = genAI.getGenerativeModel({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-1.5-flash',
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: schema
@@ -123,16 +118,16 @@ Obecny rok to 2026. Przelicz godziny na strefę czasową UTC (Polska w okresie l
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
 
-    logToFile('Otrzymana odpowiedź z Gemini:', responseText);
+    logMessage('Odpowiedź z Gemini przetworzona pomyślnie.');
 
     const eventData = JSON.parse(responseText);
     res.json(eventData);
 
   } catch (error) {
-    logToFile('KRYTYCZNY BŁĄD SERWERA:', error);
-    res.status(500).json({ error: 'Nie udało się przetworzyć wydarzenia. Wyświetl plik error.log, aby poznać szczegóły.' });
+    logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
+    res.status(500).json({ error: 'Nie udało się przetworzyć wydarzenia. Sprawdź zakłądkę Logs na Render.com.' });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Aplikacja działa na http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Aplikacja Urliqo działa na porcie ${PORT}`));
