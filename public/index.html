@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dodaj do event - Generator Kalendarza</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; display: flex; justify-content: center; padding: 40px 20px; }
+    .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 600px; width: 100%; }
+    h1 { font-size: 22px; color: #333; margin-bottom: 20px; }
+    input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; margin-bottom: 15px; font-size: 15px; }
+    button { width: 100%; padding: 12px; background-color: #1a73e8; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    button:hover { background-color: #1557b0; }
+    #loader { display: none; margin-top: 15px; color: #666; font-style: italic; }
+    #results { margin-top: 25px; }
+    .event-card { background: #f8f9fa; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+    .calendar-btn { display: inline-block; padding: 8px 14px; background: #34a853; color: white; text-decoration: none; border-radius: 4px; font-weight: bold; margin-top: 10px; }
+    .calendar-btn:hover { background: #2d8e47; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📅 Dodaj do Event</h1>
+  <p>Wklej link do wydarzenia (np. z Facebooka, Going itp.):</p>
+  <input type="text" id="eventUrl" placeholder="https://facebook.com/events/...">
+  <button onclick="processEvent()">Generuj linki do Kalendarza</button>
+  
+  <div id="loader">Analizowanie strony i generowanie linków...</div>
+  <div id="results"></div>
+</div>
+
+<script>
+async function processEvent() {
+  const url = document.getElementById('eventUrl').value;
+  const loader = document.getElementById('loader');
+  const results = document.getElementById('results');
+
+  if (!url) return alert('Wpisz adres URL!');
+
+  loader.style.display = 'block';
+  results.innerHTML = '';
+
+  try {
+    const response = await fetch('/api/parse-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+
+    const data = await response.json();
+    loader.style.display = 'none';
+
+    if (data.error) {
+      results.innerHTML = `<p style="color:red;">${data.error}</p>`;
+      return;
+    }
+
+    // Renderowanie wyników
+    let html = `<h3>${data.title}</h3><p>📍 <strong>Miejsce:</strong> ${data.location}</p>`;
+    
+    data.days.forEach(day => {
+      const googleUrl = buildGoogleCalendarUrl(data, day);
+      html += `
+        <div class="event-card">
+          <strong>Dzień ${day.day_number}</strong><br>
+          <a class="calendar-btn" href="${googleUrl}" target="_blank">➕ Dodaj Dzień ${day.day_number} do Kalendarza Google</a>
+        </div>
+      `;
+    });
+
+    results.innerHTML = html;
+
+  } catch (err) {
+    loader.style.display = 'none';
+    results.innerHTML = '<p style="color:red;">Wystąpił błąd połączenia z serwerem.</p>';
+  }
+}
+
+function buildGoogleCalendarUrl(event, day) {
+  const baseUrl = "https://calendar.google.com/calendar/render?action=TEMPLATE";
+  
+  // Formatowanie ISO do formatu Google Calendar YYYYMMDDTHHmmssZ
+  const start = day.start_time_utc.replace(/[-:]/g, "");
+  const end = day.end_time_utc.replace(/[-:]/g, "");
+  
+  const title = encodeURIComponent(`${event.title} (Dzień ${day.day_number})`);
+  const location = encodeURIComponent(event.location);
+  
+  // Tworzenie opisu z klikalnym linkiem HTML
+  const detailsText = `${event.title}.<br><br>Link do wydarzenia: <a href="${event.source_url}">${event.source_url}</a>`;
+  const details = encodeURIComponent(detailsText);
+
+  return `${baseUrl}&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
+}
+</script>
+
+</body>
+</html>
