@@ -1,99 +1,289 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Urliqo – Generator Kalendarza</title>
-  <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; display: flex; justify-content: center; padding: 40px 20px; }
-    .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 600px; width: 100%; }
-    h1 { font-size: 22px; color: #333; margin-bottom: 20px; }
-    input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; margin-bottom: 15px; font-size: 15px; }
-    button { width: 100%; padding: 12px; background-color: #1a73e8; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
-    button:hover { background-color: #1557b0; }
-    #loader { display: none; margin-top: 15px; color: #666; font-style: italic; }
-    #results { margin-top: 25px; }
-    .event-card { background: #f8f9fa; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
-    .calendar-btn { display: inline-block; padding: 8px 14px; background: #34a853; color: white; text-decoration: none; border-radius: 4px; font-weight: bold; margin-top: 10px; }
-    .calendar-btn:hover { background: #2d8e47; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urliqo – Generator Kalendarza</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f4f7f6;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 600px;
+            padding: 30px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 26px;
+            text-align: center;
+        }
+
+        p.subtitle {
+            color: #7f8c8d;
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input[type="url"] {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="url"]:focus {
+            border-color: #3498db;
+        }
+
+        button.btn-submit {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button.btn-submit:hover {
+            background-color: #2980b9;
+        }
+
+        button.btn-submit:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+            font-weight: 600;
+            color: #3498db;
+        }
+
+        .error-message {
+            display: none;
+            background-color: #fde8e8;
+            color: #e74c3c;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            border-left: 4px solid #e74c3c;
+        }
+
+        .results {
+            display: none;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+        }
+
+        .event-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 6px;
+        }
+
+        .event-location {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-bottom: 16px;
+        }
+
+        .days-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .day-card {
+            background-color: #f9fbfd;
+            border: 1px solid #e1e8ed;
+            border-radius: 8px;
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .day-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .day-name {
+            font-weight: 600;
+            font-size: 15px;
+            color: #34495e;
+        }
+
+        .day-time {
+            font-size: 13px;
+            color: #7f8c8d;
+        }
+
+        .btn-calendar {
+            background-color: #2ecc71;
+            color: white;
+            text-decoration: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+
+        .btn-calendar:hover {
+            background-color: #27ae60;
+        }
+    </style>
 </head>
 <body>
 
-<div class="container">
-  <h1>📅 Dodaj do Event</h1>
-  <p>Wklej link do wydarzenia (np. z Facebooka, Going itp.):</p>
-  <input type="text" id="eventUrl" placeholder="https://facebook.com/events/...">
-  <button onclick="processEvent()">Generuj linki do Kalendarza</button>
-  
-  <div id="loader">Analizowanie strony i generowanie linków...</div>
-  <div id="results"></div>
-</div>
+    <div class="container">
+        <h1>Urliqo</h1>
+        <p class="subtitle">Wklej link do wydarzenia, a sztuczna inteligencja przygotuje przycisk do Kalendarza Google</p>
 
-<script>
-async function processEvent() {
-  const url = document.getElementById('eventUrl').value;
-  const loader = document.getElementById('loader');
-  const results = document.getElementById('results');
+        <form id="eventForm">
+            <div class="input-group">
+                <input type="url" id="urlInput" placeholder="https://facebook.com/events/..." required>
+                <button type="submit" class="btn-submit" id="submitBtn">Generuj</button>
+            </div>
+        </form>
 
-  if (!url) return alert('Wpisz adres URL!');
+        <div class="loader" id="loader">Analizowanie strony...</div>
+        <div class="error-message" id="errorMessage"></div>
 
-  loader.style.display = 'block';
-  results.innerHTML = '';
-
-  try {
-    const response = await fetch('/api/parse-event', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
-    });
-
-    const data = await response.json();
-    loader.style.display = 'none';
-
-    if (data.error) {
-      results.innerHTML = `<p style="color:red;">${data.error}</p>`;
-      return;
-    }
-
-    // Renderowanie wyników
-    let html = `<h3>${data.title}</h3><p>📍 <strong>Miejsce:</strong> ${data.location}</p>`;
-    
-    data.days.forEach(day => {
-      const googleUrl = buildGoogleCalendarUrl(data, day);
-      html += `
-        <div class="event-card">
-          <strong>Dzień ${day.day_number}</strong><br>
-          <a class="calendar-btn" href="${googleUrl}" target="_blank">➕ Dodaj Dzień ${day.day_number} do Kalendarza Google</a>
+        <div class="results" id="results">
+            <div class="event-title" id="eventTitle"></div>
+            <div class="event-location" id="eventLocation"></div>
+            <div class="days-list" id="daysList"></div>
         </div>
-      `;
-    });
+    </div>
 
-    results.innerHTML = html;
+    <script>
+        const form = document.getElementById('eventForm');
+        const urlInput = document.getElementById('urlInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const loader = document.getElementById('loader');
+        const errorMessage = document.getElementById('errorMessage');
+        const results = document.getElementById('results');
+        const eventTitle = document.getElementById('eventTitle');
+        const eventLocation = document.getElementById('eventLocation');
+        const daysList = document.getElementById('daysList');
 
-  } catch (err) {
-    loader.style.display = 'none';
-    results.innerHTML = '<p style="color:red;">Wystąpił błąd połączenia z serwerem.</p>';
-  }
-}
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = urlInput.value.trim();
 
-function buildGoogleCalendarUrl(event, day) {
-  const baseUrl = "https://calendar.google.com/calendar/render?action=TEMPLATE";
-  
-  // Formatowanie ISO do formatu Google Calendar YYYYMMDDTHHmmssZ
-  const start = day.start_time_utc.replace(/[-:]/g, "");
-  const end = day.end_time_utc.replace(/[-:]/g, "");
-  
-  const title = encodeURIComponent(`${event.title} (Dzień ${day.day_number})`);
-  const location = encodeURIComponent(event.location);
-  
-  // Tworzenie opisu z klikalnym linkiem HTML
-  const detailsText = `${event.title}.<br><br>Link do wydarzenia: <a href="${event.source_url}">${event.source_url}</a>`;
-  const details = encodeURIComponent(detailsText);
+            if (!url) return;
 
-  return `${baseUrl}&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
-}
-</script>
+            // Reset stanu
+            errorMessage.style.display = 'none';
+            results.style.display = 'none';
+            loader.style.display = 'block';
+            submitBtn.disabled = true;
 
+            try {
+                const response = await fetch('/api/parse-event', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ url })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    const textError = data.details ? `${data.error}: ${data.details}` : (data.error || 'Nie udało się przetworzyć wydarzenia.');
+                    showError(textError);
+                    return;
+                }
+
+                renderResults(data);
+
+            } catch (err) {
+                showError('Błąd połączenia z serwerem. Upewnij się, że masz połączenie z siecią.');
+            } finally {
+                loader.style.display = 'none';
+                submitBtn.disabled = false;
+            }
+        });
+
+        function showError(msg) {
+            errorMessage.textContent = msg;
+            errorMessage.style.display = 'block';
+        }
+
+        function renderResults(data) {
+            eventTitle.textContent = data.title;
+            eventLocation.textContent = data.location ? `📍 ${data.location}` : '📍 Brak podanej lokalizacji';
+
+            daysList.innerHTML = '';
+
+            data.days.forEach(day => {
+                const startDate = new Date(day.start_time_utc);
+                const endDate = new Date(day.end_time_utc);
+
+                const formatDate = (date) => date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
+                const formatTime = (date) => date.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+
+                const gCalStart = startDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
+                const gCalEnd = endDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
+
+                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent('Wydarzenie zyskane z: ' + data.source_url)}&location=${encodeURIComponent(data.location || '')}`;
+
+                const dayCard = document.createElement('div');
+                dayCard.className = 'day-card';
+                dayCard.innerHTML = `
+                    <div class="day-info">
+                        <div class="day-name">Dzień ${day.day_number} (${formatDate(startDate)})</div>
+                        <div class="day-time">${formatTime(startDate)} - ${formatTime(endDate)}</div>
+                    </div>
+                    <a href="${gCalUrl}" target="_blank" class="btn-calendar">Dodaj do Kalendarza</a>
+                `;
+
+                daysList.appendChild(dayCard);
+            });
+
+            results.style.display = 'block';
+        }
+    </script>
 </body>
 </html>
