@@ -11,7 +11,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Funkcja logująca bezpośrednio do konsoli Render.com
 function logMessage(message, data = null) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${message}`);
@@ -33,7 +32,7 @@ app.post('/api/parse-event', async (req, res) => {
 
     if (!url) {
       logMessage('Błąd: Brak adresu URL');
-      return res.status(400).json({ error: 'Brak adresu URL' });
+      return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
     let extractedText = '';
@@ -47,7 +46,7 @@ app.post('/api/parse-event', async (req, res) => {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7'
         },
-        timeout: 10000
+        timeout: 8000
       });
 
       extractedText = response.data
@@ -58,15 +57,15 @@ app.post('/api/parse-event', async (req, res) => {
         .slice(0, 30000);
 
     } catch (fetchErr) {
-      logMessage('Axios zablokowany lub błąd pobierania:', fetchErr.message);
+      logMessage('Axios nie powiódł się:', fetchErr.message);
     }
 
-    // PROBA 2: Jina AI Reader (dla stron typu Resident Advisor / Cloudflare)
+    // PROBA 2: Jina AI Reader
     if (!extractedText || extractedText.trim().length < 100) {
       try {
         logMessage('Próba 2: Używanie Jina AI Reader...');
         const jinaUrl = `https://r.jina.ai/${url}`;
-        const jinaResponse = await axios.get(jinaUrl, { timeout: 15000 });
+        const jinaResponse = await axios.get(jinaUrl, { timeout: 12000 });
         extractedText = jinaResponse.data.slice(0, 30000);
         logMessage('Sukces Jina AI Reader!');
       } catch (jinaErr) {
@@ -74,7 +73,14 @@ app.post('/api/parse-event', async (req, res) => {
       }
     }
 
-    logMessage(`Długość tekstu do analizy: ${extractedText.length} znaków.`);
+    // Jeśli po obu próbach tekst jest nadal pusty - zgłaszamy dedykowany błąd blokady
+    if (!extractedText || extractedText.trim().length < 50) {
+      logMessage('BŁĄD: Strona jest zablokowana lub niedostępna dla bota.');
+      return res.status(422).json({ 
+        error: 'Strona nieobsługiwana lub zablokowana',
+        details: 'Ta strona stosuje zabezpieczenia antybotowe (np. Cloudflare/CAPTCHA) i nie zezwala na automatyczne pobieranie treści.'
+      });
+    }
 
     const schema = {
       type: SchemaType.OBJECT,
@@ -98,9 +104,7 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    logMessage('Wysyłanie zapytania do modelu Gemini...');
-    
-    // Zmiana na stabilny model gemini-1.5-flash
+    logMessage('Wysyłanie zapytania do Gemini...');
     const model = genAI.getGenerativeModel({
       model: 'gemini-1.5-flash',
       generationConfig: {
@@ -119,13 +123,15 @@ Obecny rok to 2026. Przelicz godziny na strefę czasową UTC (Polska w okresie l
     const responseText = result.response.text();
 
     logMessage('Odpowiedź z Gemini przetworzona pomyślnie.');
-
     const eventData = JSON.parse(responseText);
     res.json(eventData);
 
   } catch (error) {
     logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
-    res.status(500).json({ error: 'Nie udało się przetworzyć wydarzenia. Sprawdź zakłądkę Logs na Render.com.' });
+    res.status(500).json({ 
+      error: 'Błąd przetwarzania wydarzenia', 
+      details: 'Nie udało się przeanalizować treści tej strony przez AI.' 
+    });
   }
 });
 
