@@ -9,12 +9,12 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
 
         body {
-            background-color: #f4f7f6;
-            color: #333;
+            background-color: #f0f2f5;
+            color: #1c1e21;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -25,51 +25,87 @@
         .container {
             background-color: #ffffff;
             border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
             width: 100%;
-            max-width: 600px;
-            padding: 30px;
+            max-width: 520px;
+            padding: 28px;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .header-icon {
+            font-size: 24px;
         }
 
         h1 {
-            color: #2c3e50;
-            margin-bottom: 8px;
-            font-size: 26px;
-            text-align: center;
+            color: #1a1a1a;
+            font-size: 22px;
+            font-weight: 700;
         }
 
         p.subtitle {
-            color: #7f8c8d;
+            color: #606770;
             font-size: 14px;
-            text-align: center;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
+            line-height: 1.4;
         }
 
-        .input-group {
+        .input-wrapper {
+            position: relative;
+            margin-bottom: 12px;
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
+            align-items: center;
         }
 
         input[type="url"] {
-            flex: 1;
-            padding: 12px 16px;
-            border: 2px solid #e0e0e0;
+            width: 100%;
+            padding: 12px 40px 12px 14px;
+            border: 1px solid #ccd0d5;
             border-radius: 8px;
-            font-size: 15px;
+            font-size: 14px;
             outline: none;
             transition: border-color 0.2s;
         }
 
         input[type="url"]:focus {
-            border-color: #3498db;
+            border-color: #1877f2;
+        }
+
+        /* Przycisk czyszczenia wewnątrz pola tekstowego */
+        .btn-clear {
+            position: absolute;
+            right: 10px;
+            background: #e4e6eb;
+            border: none;
+            color: #606770;
+            font-size: 14px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .btn-clear:hover {
+            background: #d8dadf;
+            color: #050505;
         }
 
         button.btn-submit {
-            background-color: #3498db;
+            width: 100%;
+            background-color: #1877f2;
             color: white;
             border: none;
-            padding: 12px 20px;
+            padding: 12px;
             border-radius: 8px;
             font-size: 15px;
             font-weight: 600;
@@ -78,63 +114,69 @@
         }
 
         button.btn-submit:hover {
-            background-color: #2980b9;
+            background-color: #166fe5;
         }
 
         button.btn-submit:disabled {
-            background-color: #bdc3c7;
+            background-color: #e4e6eb;
+            color: #bcc0c4;
             cursor: not-allowed;
         }
 
         .loader {
             display: none;
             text-align: center;
-            margin: 20px 0;
-            font-weight: 600;
-            color: #3498db;
+            margin-top: 16px;
+            font-size: 14px;
+            color: #1877f2;
+            font-weight: 500;
         }
 
         .error-message {
             display: none;
-            background-color: #fde8e8;
-            color: #e74c3c;
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            margin-top: 16px;
+            color: #fa383e;
             font-size: 14px;
-            border-left: 4px solid #e74c3c;
+            line-height: 1.4;
+        }
+
+        .error-details {
+            font-size: 12px;
+            color: #65676b;
+            margin-top: 4px;
         }
 
         .results {
             display: none;
-            border-top: 1px solid #eee;
+            margin-top: 20px;
+            border-top: 1px solid #e4e6eb;
             padding-top: 20px;
         }
 
         .event-title {
-            font-size: 20px;
-            font-weight: bold;
-            color: #2c3e50;
+            font-size: 18px;
+            font-weight: 700;
+            color: #1c1e21;
             margin-bottom: 6px;
         }
 
         .event-location {
-            font-size: 14px;
-            color: #7f8c8d;
+            font-size: 13px;
+            color: #606770;
             margin-bottom: 16px;
         }
 
         .days-list {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
 
         .day-card {
-            background-color: #f9fbfd;
-            border: 1px solid #e1e8ed;
+            background-color: #f7f8fa;
+            border: 1px solid #e4e6eb;
             border-radius: 8px;
-            padding: 14px 16px;
+            padding: 12px 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -143,51 +185,61 @@
         .day-info {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 2px;
         }
 
         .day-name {
             font-weight: 600;
-            font-size: 15px;
-            color: #34495e;
+            font-size: 14px;
+            color: #1c1e21;
         }
 
         .day-time {
-            font-size: 13px;
-            color: #7f8c8d;
+            font-size: 12px;
+            color: #606770;
         }
 
         .btn-calendar {
-            background-color: #2ecc71;
+            background-color: #42b72a;
             color: white;
             text-decoration: none;
-            padding: 8px 14px;
+            padding: 8px 12px;
             border-radius: 6px;
             font-size: 13px;
             font-weight: 600;
             transition: background-color 0.2s;
+            white-space: nowrap;
         }
 
         .btn-calendar:hover {
-            background-color: #27ae60;
+            background-color: #36a420;
         }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>Urliqo</h1>
-        <p class="subtitle">Wklej link do wydarzenia, a sztuczna inteligencja przygotuje przycisk do Kalendarza Google</p>
+        <div class="header">
+            <span class="header-icon">📅</span>
+            <h1>Urliqo</h1>
+        </div>
+        
+        <p class="subtitle">Wklej link do wydarzenia (np. z Facebooka, Going itp.):</p>
 
         <form id="eventForm">
-            <div class="input-group">
-                <input type="url" id="urlInput" placeholder="https://facebook.com/events/..." required>
-                <button type="submit" class="btn-submit" id="submitBtn">Generuj</button>
+            <div class="input-wrapper">
+                <input type="url" id="urlInput" placeholder="https://..." required autocomplete="off">
+                <button type="button" class="btn-clear" id="btnClear" title="Wyczyść pole">✕</button>
             </div>
+            <button type="submit" class="btn-submit" id="submitBtn">Generuj linki do Kalendarza</button>
         </form>
 
-        <div class="loader" id="loader">Analizowanie strony...</div>
-        <div class="error-message" id="errorMessage"></div>
+        <div class="loader" id="loader">Analizowanie strony przez AI...</div>
+        
+        <div class="error-message" id="errorMessage">
+            <div id="errorTitle"></div>
+            <div class="error-details" id="errorDetails"></div>
+        </div>
 
         <div class="results" id="results">
             <div class="event-title" id="eventTitle"></div>
@@ -199,13 +251,30 @@
     <script>
         const form = document.getElementById('eventForm');
         const urlInput = document.getElementById('urlInput');
+        const btnClear = document.getElementById('btnClear');
         const submitBtn = document.getElementById('submitBtn');
         const loader = document.getElementById('loader');
         const errorMessage = document.getElementById('errorMessage');
+        const errorTitle = document.getElementById('errorTitle');
+        const errorDetails = document.getElementById('errorDetails');
         const results = document.getElementById('results');
         const eventTitle = document.getElementById('eventTitle');
         const eventLocation = document.getElementById('eventLocation');
         const daysList = document.getElementById('daysList');
+
+        // Pokazuj/ukrywaj przycisk "Wyczyść" zależnie od wpisanego tekstu
+        urlInput.addEventListener('input', () => {
+            btnClear.style.display = urlInput.value.length > 0 ? 'flex' : 'none';
+        });
+
+        // Obsługa kliknięcia "Wyczyść"
+        btnClear.addEventListener('click', () => {
+            urlInput.value = '';
+            btnClear.style.display = 'none';
+            errorMessage.style.display = 'none';
+            results.style.display = 'none';
+            urlInput.focus();
+        });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -222,32 +291,30 @@
             try {
                 const response = await fetch('/api/parse-event', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url })
                 });
 
                 const data = await response.json();
 
                 if (!response.ok) {
-                    const textError = data.details ? `${data.error}: ${data.details}` : (data.error || 'Nie udało się przetworzyć wydarzenia.');
-                    showError(textError);
+                    showError(data.error || 'Wystąpił nieznany błąd.', data.details || '');
                     return;
                 }
 
                 renderResults(data);
 
             } catch (err) {
-                showError('Błąd połączenia z serwerem. Upewnij się, że masz połączenie z siecią.');
+                showError('Błąd połączenia z serwerem', 'Sprawdź swoje połączenie internetowe i spróbuj ponownie.');
             } finally {
                 loader.style.display = 'none';
                 submitBtn.disabled = false;
             }
         });
 
-        function showError(msg) {
-            errorMessage.textContent = msg;
+        function showError(title, details) {
+            errorTitle.textContent = title;
+            errorDetails.textContent = details;
             errorMessage.style.display = 'block';
         }
 
@@ -267,7 +334,7 @@
                 const gCalStart = startDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
                 const gCalEnd = endDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
 
-                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent('Wydarzenie zyskane z: ' + data.source_url)}&location=${encodeURIComponent(data.location || '')}`;
+                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent('Wydarzenie wygenerowane z: ' + data.source_url)}&location=${encodeURIComponent(data.location || '')}`;
 
                 const dayCard = document.createElement('div');
                 dayCard.className = 'day-card';
