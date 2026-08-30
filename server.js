@@ -37,7 +37,7 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // PROBA 1: Pobieranie przez Axios
+    // PROBA 1: Pobieranie przez Axios z nagłówkami przeglądarki
     try {
       logMessage('Pobieranie strony (Próba 1 - Axios)...');
       const response = await axios.get(url, {
@@ -57,13 +57,13 @@ app.post('/api/parse-event', async (req, res) => {
         .slice(0, 30000);
 
     } catch (fetchErr) {
-      logMessage('Axios nie powiódł się:', fetchErr.message);
+      logMessage('Próba 1 (Axios) nie powiodła się:', fetchErr.message);
     }
 
-    // PROBA 2: Jina AI Reader
+    // PROBA 2: Czytnik Jina AI dla trudnych stron (np. Resident Advisor / Cloudflare)
     if (!extractedText || extractedText.trim().length < 100) {
       try {
-        logMessage('Próba 2: Używanie Jina AI Reader...');
+        logMessage('Próba 2: Używanie Jina AI Reader dla stron z zabezpieczeniami...');
         const jinaUrl = `https://r.jina.ai/${url}`;
         const jinaResponse = await axios.get(jinaUrl, { timeout: 12000 });
         extractedText = jinaResponse.data.slice(0, 30000);
@@ -73,12 +73,12 @@ app.post('/api/parse-event', async (req, res) => {
       }
     }
 
-    // Jeśli po obu próbach tekst jest nadal pusty - zgłaszamy dedykowany błąd blokady
+    // Jeśli strona całkowicie zablokowała dostęp bota
     if (!extractedText || extractedText.trim().length < 50) {
-      logMessage('BŁĄD: Strona jest zablokowana lub niedostępna dla bota.');
+      logMessage('BŁĄD: Strona jest zablokowana przez zabezpieczenia antybotowe.');
       return res.status(422).json({ 
-        error: 'Strona nieobsługiwana lub zablokowana',
-        details: 'Ta strona stosuje zabezpieczenia antybotowe (np. Cloudflare/CAPTCHA) i nie zezwala na automatyczne pobieranie treści.'
+        error: 'Strona zablokowana lub nieobsługiwana',
+        details: 'Ten portal stosuje zabezpieczenia antybotowe (np. Cloudflare/CAPTCHA) i blokuje automatyczne pobieranie wydarzeń.'
       });
     }
 
@@ -130,7 +130,7 @@ Obecny rok to 2026. Przelicz godziny na strefę czasową UTC (Polska w okresie l
     logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
     res.status(500).json({ 
       error: 'Błąd przetwarzania wydarzenia', 
-      details: 'Nie udało się przeanalizować treści tej strony przez AI.' 
+      details: 'Wystąpił nieoczekiwany problem podczas analizy strony przez AI.' 
     });
   }
 });
