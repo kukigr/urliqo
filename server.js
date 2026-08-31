@@ -27,10 +27,9 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // 1. CZYSZCZENIE URL (Szczególnie ważne dla FB i Tobilet)
+    // 1. Oczyszczanie URL
     try {
       const parsedUrl = new URL(url);
-      // Czyszczenie parametrów śledzących Facebooka i Google Analytics
       parsedUrl.search = ''; 
       url = parsedUrl.toString();
       logMessage(`Oczyszczony URL: ${url}`);
@@ -40,16 +39,24 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // 2. POBIERANIE TREŚCI STRONY
-    // Najpierw próbujemy przez Jina Reader (najlepszy dla artykułów i FB)
+    // 2. Pobieranie przez Jina Reader z obsługą autoryzacji oraz zapasowych nagłówków
     try {
       logMessage('Pobieranie przez Jina Reader...');
+      
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'X-With-Generated-Alt': 'true',
+        'X-No-Cache': 'true'
+      };
+
+      // Jeśli dodałeś JINA_API_KEY do zmiennych środowiskowych na Renderze
+      if (process.env.JINA_API_KEY) {
+        headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
+      }
+
       const jinaRes = await axios.get(`https://r.jina.ai/${url}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'X-With-Generated-Alt': 'true'
-        },
-        timeout: 12000
+        headers,
+        timeout: 15000
       });
 
       if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 100) {
@@ -57,43 +64,39 @@ app.post('/api/parse-event', async (req, res) => {
         logMessage('Sukces: Pobrano przez Jina Reader.');
       }
     } catch (e) {
-      logMessage('Jina Reader nie dał rady:', e.message);
+      logMessage('Jina Reader zgłosił błąd:', e.response ? `Status ${e.response.status}` : e.message);
     }
 
-    // Fallback: Bezpośredni Axios
+    // 3. Zapasowa próba przez alternatywne publiczne API proxy
     if (!extractedText || extractedText.length < 100) {
       try {
-        logMessage('Pobieranie bezpośrednie Axios...');
-        const response = await axios.get(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8'
-          },
+        logMessage('Pobieranie przez zapasowe proxy CORS...');
+        const proxyRes = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, {
           timeout: 10000
         });
 
-        if (typeof response.data === 'string') {
-          extractedText = response.data
+        if (proxyRes.data && typeof proxyRes.data === 'string') {
+          extractedText = proxyRes.data
             .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
             .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
             .replace(/<[^>]+>/g, '\n')
             .replace(/\n\s*\n/g, '\n');
         }
-      } catch (axiosErr) {
-        logMessage('Axios zgłosił błąd:', axiosErr.message);
+      } catch (proxyErr) {
+        logMessage('Zapasowe proxy zgłosiło błąd:', proxyErr.message);
       }
     }
 
-    // Walidacja czy cokolwiek udało się pobrać
+    // Jeśli strona całkowicie odrzuciła pobieranie
     if (!extractedText || extractedText.trim().length < 50) {
       logMessage('BŁĄD: Brak treści do analizy.');
       return res.status(422).json({ 
-        error: 'Strona zablokowana lub brak treści',
-        details: 'Portal blokuje automatyczny odczyt z serwerów zewnętrznych.'
+        error: 'Facebook zablokował dostęp do tego wydarzenia.',
+        details: 'Dla wydarzeń z Facebooka wymagany jest bezpłatny klucz API Jina lub wklejenie linku z portalu biletowego.'
       });
     }
 
-    // 3. STRUKTURA SCHEMA DLA GEMINI
+    // 4. Gemini Schema
     const schema = {
       type: SchemaType.OBJECT,
       properties: {
@@ -123,11 +126,10 @@ ${extractedText.slice(0, 30000)}
 
 ZASADY:
 1. Rok: Podany w tekście lub załóż 2026.
-2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h od podanej godziny; czas zimowy: odejmij 1h).
+2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
 3. Zwróć JSON zgodny ze schematem.`;
 
-    // 4. BEZPIECZNE WYWOŁANIE GEMINI (FALLBACK MODELI)
-    // Zamiast jednej nazwy, próbujemy stabilnych identyfikatorów po kolei
+    // 5. Wywołanie Gemini z obsługą wielu modeli
     const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
     let responseText = null;
     let lastError = null;
@@ -146,7 +148,7 @@ ZASADY:
         const result = await model.generateContent(promptText);
         responseText = result.response.text();
         logMessage(`Sukces! Odpowiedział model: ${modelName}`);
-        break; // Udało się, wychodzimy z pętli!
+        break;
       } catch (err) {
         logMessage(`Błąd z modelem ${modelName}: ${err.message}`);
         lastError = err;
@@ -157,13 +159,12 @@ ZASADY:
       throw lastError || new Error('Żaden model Gemini nie odpowiedział pomyślnie.');
     }
 
-    const eventData = JSON.parse(responseText);
-    res.json(eventData);
+    res.json(JSON.parse(responseText));
 
   } catch (error) {
     logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
     res.status(500).json({ 
-      error: 'Błąd przetwarzaania wydarzenia', 
+      error: 'Błąd przetwarzania wydarzenia', 
       details: error.message 
     });
   }
