@@ -27,24 +27,23 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // 1. Czyszczenie parametrów śledzących z adresu URL
+    // 1. Oczyszczanie linku Facebooka z parametrów śledzących
     try {
-      const parsedUrl = new URL(url);
-      parsedUrl.search = ''; 
-      url = parsedUrl.toString();
+      const cleanUrlObj = new URL(url);
+      cleanUrlObj.search = '';
+      url = cleanUrlObj.toString();
       logMessage(`Oczyszczony URL: ${url}`);
     } catch (e) {
-      logMessage('Błąd parsowania URL, używam oryginalnego');
+      logMessage('Nie udało się oczyścić URL, używam oryginalnego.');
     }
 
     let extractedText = '';
 
-    // 2. Pobieranie przez Jina Reader (z autoryzacją kluczem JINA_API_KEY)
+    // 2. Pobieranie treści przez Jina Reader
     try {
       logMessage('Pobieranie przez Jina Reader...');
-      
       const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'X-With-Generated-Alt': 'true',
         'X-No-Cache': 'true'
       };
@@ -66,7 +65,7 @@ app.post('/api/parse-event', async (req, res) => {
       logMessage('Jina Reader zgłosił błąd:', e.response ? `Status ${e.response.status}` : e.message);
     }
 
-    // 3. Zapasowe pobieranie przez proxy
+    // 3. Fallback: Pobieranie przez otwarte proxy
     if (!extractedText || extractedText.length < 100) {
       try {
         logMessage('Pobieranie przez zapasowe proxy CORS...');
@@ -86,16 +85,15 @@ app.post('/api/parse-event', async (req, res) => {
       }
     }
 
-    // Weryfikacja pobranej treści
     if (!extractedText || extractedText.trim().length < 50) {
       logMessage('BŁĄD: Brak treści do analizy.');
       return res.status(422).json({ 
         error: 'Strona zablokowana lub brak treści',
-        details: 'Portal blokuje automatyczny odczyt z serwerów zewnętrznych.'
+        details: 'Portal zablokował automatyczny odczyt z serwera.'
       });
     }
 
-    // 4. Schema JSON dla Gemini
+    // 4. Schema odpowiedzi dla Gemini
     const schema = {
       type: SchemaType.OBJECT,
       properties: {
@@ -118,18 +116,31 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    // 5. Analiza treści przez model Gemini
-    logMessage('Wysyłanie zapytania do Gemini 1.5 Flash...');
+    // 5. Wywołanie Gemini z odpornością na zmiany modeli (od najnowszych 3.x/2.x)
+    const activeModels = [
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
+      'gemini-2.5-flash',
+      'gemini-3.5-flash'
+    ];
 
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: schema
-      }
-    });
+    let responseText = null;
+    let lastError = null;
 
-    const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
+    logMessage('Wysyłanie zapytania do Gemini...');
+
+    for (const modelName of activeModels) {
+      try {
+        logMessage(`Próba z modelem: ${modelName}`);
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: schema
+          }
+        });
+
+        const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
 URL: ${url}
 Tekst strony:
 ${extractedText.slice(0, 30000)}
@@ -139,8 +150,19 @@ ZASADY:
 2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
 3. Zwróć JSON zgodny ze schematem.`;
 
-    const result = await model.generateContent(promptText);
-    const responseText = result.response.text();
+        const result = await model.generateContent(promptText);
+        responseText = result.response.text();
+        logMessage(`Sukces! Model ${modelName} przetworzył zapytanie.`);
+        break;
+      } catch (err) {
+        logMessage(`Model ${modelName} zgłosił błąd: ${err.message}`);
+        lastError = err;
+      }
+    }
+
+    if (!responseText) {
+      throw lastError || new Error('Brak odpowiedzi z API Gemini');
+    }
 
     logMessage('Pomyślnie przetworzono wydarzenie.');
     res.json(JSON.parse(responseText));
