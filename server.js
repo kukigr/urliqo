@@ -46,7 +46,7 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // Metoda 1: Pobieranie bezpośrednie z mobilnej wersji (działało najszybciej i najskuteczniej)
+    // Metoda 1: Pobieranie bezpośrednie z mbasic
     try {
       logMessage('Pobieranie bezpośrednie strony...');
       const directRes = await axios.get(cleanUrl, {
@@ -62,7 +62,7 @@ app.post('/api/parse-event', async (req, res) => {
       logMessage('Pobieranie bezpośrednie nie powiodło się:', e.message);
     }
 
-    // Metoda 2: Jina Reader (tylko w razie niepowodzenia metody 1)
+    // Metoda 2: Jina Reader (zapasowa)
     if (!extractedText || extractedText.length < 200) {
       try {
         logMessage('Pobieranie przez Jina Reader...');
@@ -110,7 +110,7 @@ app.post('/api/parse-event', async (req, res) => {
       type: SchemaType.OBJECT,
       properties: {
         title: { type: SchemaType.STRING, description: 'Nazwa wydarzenia' },
-        description: { type: SchemaType.STRING, description: 'Krótkie podsumowanie lub pełny opis wydarzenia ze strony' },
+        description: { type: SchemaType.STRING, description: 'Podsumowanie lub opisu wydarzenia' },
         location: { type: SchemaType.STRING, description: 'Pełny adres lub nazwa miejsca i miasto' },
         source_url: { type: SchemaType.STRING, description: 'Link źródłowy' },
         days: {
@@ -148,7 +148,7 @@ ${extractedText.slice(0, 20000)}
 ZASADY:
 1. Rok: Podany w tekście lub załóż 2026.
 2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
-3. Opis (description): Wyciągnij podsumowanie opisu wydarzenia lub cały opis jeśli jest krótki.
+3. Opis (description): Wyciągnij kluczowe informacje i opis wydarzenia ze strony.
 4. Zwróć JSON zgodny ze schematem.`;
 
     const result = await model.generateContent(promptText);
