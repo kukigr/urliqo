@@ -18,8 +18,6 @@ function logMessage(message, data = null) {
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-// Agent ignorujący ew. błędy certyfikatów SSL na niektórych polskich stronach
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 app.post('/api/parse-event', async (req, res) => {
@@ -28,11 +26,10 @@ app.post('/api/parse-event', async (req, res) => {
     logMessage(`Otrzymano żądanie dla URL: ${url}`);
 
     if (!url) {
-      logMessage('Błąd: Brak adresu URL');
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // Bezpieczne czyszczenie parametrów śledzących bez psujących zmian w ścieżce
+    // Bezpieczne czyszczenie śledzenia z URL
     try {
       const parsedUrl = new URL(url);
       if (parsedUrl.search) {
@@ -41,13 +38,11 @@ app.post('/api/parse-event', async (req, res) => {
         parsedUrl.searchParams.delete('fbclid');
         url = parsedUrl.toString();
       }
-    } catch (e) {
-      // W razie problemów zostawiamy oryginalny URL
-    }
+    } catch (e) {}
 
     let extractedText = '';
 
-    // PROBA 1: Pobieranie przez Axios
+    // PROBA 1: Pobieranie bezpośrednie z wydłużonym czasem (12 sekund)
     try {
       logMessage('Pobieranie strony (Próba 1 - Axios)...');
       const response = await axios.get(url, {
@@ -56,46 +51,35 @@ app.post('/api/parse-event', async (req, res) => {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7'
         },
-        timeout: 10000,
-        maxRedirects: 5,
+        timeout: 12000,
         httpsAgent: httpsAgent
       });
 
       if (typeof response.data === 'string') {
-        extractedText = response.data
-          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/\s+/g, ' ')
-          .slice(0, 35000);
+        extractedText = cleanHtml(response.data);
       }
     } catch (fetchErr) {
       logMessage('Próba 1 (Axios) nie powiodła się:', fetchErr.message);
     }
 
-    // PROBA 2: Czytnik Jina AI dla trudnych stron
-    if (!extractedText || extractedText.trim().length < 50) {
+    // PROBA 2: Odpowiednik Jina AI bez wymogu API Key (używamy publicznego proxy AllOrigins)
+    if (!extractedText || extractedText.trim().length < 100) {
       try {
-        logMessage('Próba 2: Używanie Jina AI Reader...');
-        const jinaUrl = `https://r.jina.ai/${url}`;
-        const jinaResponse = await axios.get(jinaUrl, { 
-          headers: { 'Accept': 'text/plain' },
-          timeout: 15000 
-        });
+        logMessage('Próba 2: Używanie Proxy (AllOrigins)...');
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const proxyResponse = await axios.get(proxyUrl, { timeout: 15000 });
 
-        if (jinaResponse.data) {
-          extractedText = typeof jinaResponse.data === 'string' 
-            ? jinaResponse.data.slice(0, 35000) 
-            : JSON.stringify(jinaResponse.data).slice(0, 35000);
-          logMessage('Sukces Jina AI Reader!');
+        if (proxyResponse.data && proxyResponse.data.contents) {
+          extractedText = cleanHtml(proxyResponse.data.contents);
+          logMessage('Sukces Proxy AllOrigins!');
         }
-      } catch (jinaErr) {
-        logMessage('Błąd Jina AI Reader:', jinaErr.message);
+      } catch (proxyErr) {
+        logMessage('Błąd Proxy:', proxyErr.message);
       }
     }
 
-    // Jeśli obie metody nie przyniosły efektu
-    if (!extractedText || extractedText.trim().length < 30) {
+    // Jeśli strona całkowicie zablokowała dostęp
+    if (!extractedText || extractedText.trim().length < 50) {
       logMessage('BŁĄD: Strona jest zablokowana przez zabezpieczenia antybotowe.');
       return res.status(422).json({ 
         error: 'Strona zablokowana lub nieobsługiwana',
@@ -161,6 +145,15 @@ ZASADY:
     });
   }
 });
+
+function cleanHtml(html) {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 35000);
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Aplikacja Urliqo działa na porcie ${PORT}`));
