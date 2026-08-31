@@ -28,7 +28,7 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // Czyszczenie zbędnych parametrów śledzących
+    // Bezpieczne czyszczenie zbędnych parametrów trackingowych z adresu URL
     try {
       const cleanUrlObj = new URL(url);
       cleanUrlObj.searchParams.delete('_gl');
@@ -39,7 +39,7 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // PRÓBA 1: Bezpośrednie pobranie przez Axios z długim timeoutem (15 sekund)
+    // PRÓBA 1: Pobieranie bezpośrednie z realistycznym nagłówkiem przeglądarki
     try {
       logMessage('Pobieranie strony (Próba 1 - Axios)...');
       const response = await axios.get(url, {
@@ -48,43 +48,33 @@ app.post('/api/parse-event', async (req, res) => {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7'
         },
-        timeout: 15000
+        timeout: 8000
       });
 
       if (typeof response.data === 'string') {
-        extractedText = response.data
-          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-          .replace(/<[^>]+>/g, '\n')
-          .replace(/\n\s*\n/g, '\n')
-          .slice(0, 40000);
+        extractedText = cleanHtml(response.data);
       }
     } catch (fetchErr) {
       logMessage('Próba 1 (Axios) nie powiodła się:', fetchErr.message);
     }
 
-    // PRÓBA 2: Pobranie przez zapasowe proxy CORS (dla stron blokujących IP z chmury jak FB/Cloudflare)
-    if (!extractedText || extractedText.trim().length < 150) {
+    // PRÓBA 2: Pobieranie z wykorzystaniem alternatywnego serwera czytającego
+    if (!extractedText || extractedText.trim().length < 100) {
       try {
-        logMessage('Próba 2: Używanie Zapasowego Proxy dla stron z zabezpieczeniami...');
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-        const proxyResponse = await axios.get(proxyUrl, { timeout: 15000 });
+        logMessage('Próba 2: Czytnik zapasowy...');
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+        const proxyResponse = await axios.get(proxyUrl, { timeout: 8000 });
 
-        if (proxyResponse.data && proxyResponse.data.contents) {
-          extractedText = proxyResponse.data.contents
-            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-            .replace(/<[^>]+>/g, '\n')
-            .replace(/\n\s*\n/g, '\n')
-            .slice(0, 40000);
-          logMessage('Sukces Pobierania przez Proxy!');
+        if (proxyResponse.data && typeof proxyResponse.data === 'string') {
+          extractedText = cleanHtml(proxyResponse.data);
+          logMessage('Sukces pobierania z proxy zapasowego!');
         }
       } catch (proxyErr) {
-        logMessage('Błąd Proxy:', proxyErr.message);
+        logMessage('Błąd czytnika zapasowego:', proxyErr.message);
       }
     }
 
-    // Jeśli strona całkowicie zablokowała dostęp
+    // Jeśli strona całkowicie zablokowała pobieranie
     if (!extractedText || extractedText.trim().length < 50) {
       logMessage('BŁĄD: Strona jest zablokowana przez zabezpieczenia antybotowe.');
       return res.status(422).json({ 
@@ -117,7 +107,7 @@ app.post('/api/parse-event', async (req, res) => {
 
     logMessage('Wysyłanie zapytania do Gemini...');
     
-    // Użycie aktualnego modelu gemini-2.5-flash
+    // Oficjalny model z aktualnej wersji API
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
@@ -153,6 +143,15 @@ ZASADY:
     });
   }
 });
+
+function cleanHtml(html) {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/<[^>]+>/g, '\n')
+    .replace(/\n\s*\n/g, '\n')
+    .slice(0, 35000);
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Aplikacja Urliqo działa na porcie ${PORT}`));
