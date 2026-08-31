@@ -20,16 +20,26 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.post('/api/parse-event', async (req, res) => {
   try {
-    const { url } = req.body;
+    let { url } = req.body;
     logMessage(`Otrzymano żądanie dla URL: ${url}`);
 
     if (!url) {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
+    // 1. Oczyszczanie linku Facebooka z parametrów śledzących
+    try {
+      const cleanUrlObj = new URL(url);
+      cleanUrlObj.search = '';
+      url = cleanUrlObj.toString();
+      logMessage(`Oczyszczony URL: ${url}`);
+    } catch (e) {
+      logMessage('Nie udało się oczyścić URL, używam oryginalnego.');
+    }
+
     let extractedText = '';
 
-    // 1. Pobieranie treści przez Jina Reader
+    // 2. Pobieranie treści przez Jina Reader
     try {
       logMessage('Pobieranie przez Jina Reader...');
       const headers = {
@@ -55,7 +65,7 @@ app.post('/api/parse-event', async (req, res) => {
       logMessage('Jina Reader zgłosił błąd:', e.response ? `Status ${e.response.status}` : e.message);
     }
 
-    // 2. Fallback: Pobieranie przez otwarte proxy
+    // 3. Fallback: Pobieranie przez otwarte proxy
     if (!extractedText || extractedText.length < 100) {
       try {
         logMessage('Pobieranie przez zapasowe proxy CORS...');
@@ -83,7 +93,7 @@ app.post('/api/parse-event', async (req, res) => {
       });
     }
 
-    // 3. Schema odpowiedzi dla Gemini
+    // 4. Schema odpowiedzi dla Gemini
     const schema = {
       type: SchemaType.OBJECT,
       properties: {
@@ -106,7 +116,7 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    // 4. Wywołanie Gemini
+    // 5. Wywołanie Gemini z odpornością na zmiany modeli (od najnowszych 3.x/2.x)
     const activeModels = [
       'gemini-3.7-flash',
       'gemini-3.6-flash',
@@ -154,13 +164,8 @@ ZASADY:
       throw lastError || new Error('Brak odpowiedzi z API Gemini');
     }
 
-    const eventData = JSON.parse(responseText);
-
-    // Dopisanie oryginalnego adresu URL do odpowiedzi bez psucia pobierania
-    eventData.source_url = url;
-
     logMessage('Pomyślnie przetworzono wydarzenie.');
-    res.json(eventData);
+    res.json(JSON.parse(responseText));
 
   } catch (error) {
     logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
