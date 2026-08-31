@@ -18,6 +18,14 @@ function logMessage(message, data = null) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Nagłówki imitujące prawdziwą przeglądarkę
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'pl,en-US;q=0.7,en;q=0.3',
+  'Cache-Control': 'no-cache'
+};
+
 app.post('/api/parse-event', async (req, res) => {
   try {
     let { url } = req.body;
@@ -31,6 +39,8 @@ app.post('/api/parse-event', async (req, res) => {
     try {
       const parsedUrl = new URL(url);
       if (parsedUrl.hostname.includes('facebook.com')) {
+        // Konwersja na mobilny URL Facebooka dla ułatwienia pobrania treści
+        parsedUrl.hostname = 'mbasic.facebook.com';
         parsedUrl.search = '';
         cleanUrl = parsedUrl.toString();
       }
@@ -40,57 +50,80 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // Pobieranie przez Jina Reader z krótkim timeoutem (5 sekund)
+    // Metoda 1: Pobieranie bezpośrednie z mobilnego Facebooka / strony źródłowej
     try {
-      logMessage('Pobieranie przez Jina Reader...');
-      const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'X-With-Generated-Alt': 'true',
-        'X-No-Cache': 'true'
-      };
-
-      if (process.env.JINA_API_KEY) {
-        headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
-      }
-
-      const jinaRes = await axios.get(`https://r.jina.ai/${cleanUrl}`, {
-        headers,
-        timeout: 5000
+      logMessage('Pobieranie bezpośrednie strony...');
+      const directRes = await axios.get(cleanUrl, {
+        headers: BROWSER_HEADERS,
+        timeout: 8000
       });
 
-      if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 100) {
-        extractedText = jinaRes.data;
-        logMessage('Sukces: Pobrano treść przez Jina Reader.');
+      if (directRes.data && typeof directRes.data === 'string' && directRes.data.length > 200) {
+        extractedText = directRes.data;
+        logMessage('Sukces: Pobrano treść bezpośrednio.');
       }
     } catch (e) {
-      logMessage('Jina Reader zgłosił błąd/timeout:', e.message);
+      logMessage('Pobieranie bezpośrednie nie powiodło się:', e.message);
     }
 
-    // Zapasowe proxy CORS (timeout 4 sekundy)
-    if (!extractedText || extractedText.length < 100) {
+    // Metoda 2: Jina Reader z wydłużonym czasem (10 sekund)
+    if (!extractedText || extractedText.length < 200) {
+      try {
+        logMessage('Pobieranie przez Jina Reader...');
+        const headers = {
+          ...BROWSER_HEADERS,
+          'X-With-Generated-Alt': 'true',
+          'X-No-Cache': 'true'
+        };
+
+        if (process.env.JINA_API_KEY) {
+          headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
+        }
+
+        const jinaRes = await axios.get(`https://r.jina.ai/${cleanUrl}`, {
+          headers,
+          timeout: 10000
+        });
+
+        if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 100) {
+          extractedText = jinaRes.data;
+          logMessage('Sukces: Pobrano treść przez Jina Reader.');
+        }
+      } catch (e) {
+        logMessage('Jina Reader zgłosił błąd/timeout:', e.message);
+      }
+    }
+
+    // Metoda 3: Proxy AllOrigins (8 sekund)
+    if (!extractedText || extractedText.length < 200) {
       try {
         logMessage('Pobieranie przez zapasowe proxy CORS...');
         const proxyRes = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(cleanUrl)}`, {
-          timeout: 4000
+          timeout: 8000
         });
 
         if (proxyRes.data && typeof proxyRes.data === 'string') {
-          extractedText = proxyRes.data
-            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-            .replace(/<[^>]+>/g, '\n')
-            .replace(/\n\s*\n/g, '\n');
+          extractedText = proxyRes.data;
         }
       } catch (proxyErr) {
         logMessage('Zapasowe proxy zgłosiło błąd:', proxyErr.message);
       }
     }
 
+    // Oczyszczanie zebranego kodu HTML z tagów
+    if (extractedText) {
+      extractedText = extractedText
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+        .replace(/<[^>]+>/g, '\n')
+        .replace(/\n\s*\n/g, '\n');
+    }
+
     if (!extractedText || extractedText.trim().length < 50) {
       logMessage('BŁĄD: Brak treści do analizy.');
       return res.status(422).json({ 
         error: 'Strona zablokowana lub brak treści',
-        details: 'Nie udało się odczytać treści z podanego adresu.'
+        details: 'Facebook lub serwer źródłowy zablokował automatyczne pobranie treści.'
       });
     }
 
@@ -116,7 +149,6 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    // Podstawowa lista szybkich modeli bez zbędnych zapytań sprawdzających
     const fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
     let responseText = null;
     let lastError = null;
@@ -160,7 +192,7 @@ ZASADY:
     }
 
     const parsedData = JSON.parse(responseText);
-    parsedData.source_url = cleanUrl;
+    parsedData.source_url = url; // Zwracamy pierwotny link podany przez użytkownika
     
     return res.json(parsedData);
 
