@@ -40,7 +40,7 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // Pobieranie przez Jina Reader (z agresywnym timeoutem 7s, żeby nie wieszać serwera)
+    // Pobieranie przez Jina Reader z krótkim timeoutem (5 sekund)
     try {
       logMessage('Pobieranie przez Jina Reader...');
       const headers = {
@@ -55,7 +55,7 @@ app.post('/api/parse-event', async (req, res) => {
 
       const jinaRes = await axios.get(`https://r.jina.ai/${cleanUrl}`, {
         headers,
-        timeout: 7000
+        timeout: 5000
       });
 
       if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 100) {
@@ -66,12 +66,12 @@ app.post('/api/parse-event', async (req, res) => {
       logMessage('Jina Reader zgłosił błąd/timeout:', e.message);
     }
 
-    // Zapasowe proxy CORS (timeout 5s)
+    // Zapasowe proxy CORS (timeout 4 sekundy)
     if (!extractedText || extractedText.length < 100) {
       try {
         logMessage('Pobieranie przez zapasowe proxy CORS...');
         const proxyRes = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(cleanUrl)}`, {
-          timeout: 5000
+          timeout: 4000
         });
 
         if (proxyRes.data && typeof proxyRes.data === 'string') {
@@ -116,8 +116,8 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    // Stała, powszechnie szybka lista sprawdzania modeli (bez zbędnego zapytania HTTP po modele na starcie)
-    const fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
+    // Podstawowa lista szybkich modeli bez zbędnych zapytań sprawdzających
+    const fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
     let responseText = null;
     let lastError = null;
 
@@ -133,7 +133,7 @@ ZASADY:
 
     for (const modelName of fallbackModels) {
       try {
-        logMessage(`Szybka próba z modelem: ${modelName}`);
+        logMessage(`Próba z modelem: ${modelName}`);
         const model = genAI.getGenerativeModel({
           model: modelName,
           generationConfig: {
@@ -147,7 +147,7 @@ ZASADY:
         logMessage(`Sukces! Model ${modelName} przetworzył zapytanie.`);
         break;
       } catch (err) {
-        logMessage(`Model ${modelName} nie odpowiedział: ${err.message}`);
+        logMessage(`Model ${modelName} zgłosił błąd: ${err.message}`);
         lastError = err;
       }
     }
