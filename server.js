@@ -18,7 +18,6 @@ function logMessage(message, data = null) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Nagłówki imitujące prawdziwą przeglądarkę
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -39,7 +38,6 @@ app.post('/api/parse-event', async (req, res) => {
     try {
       const parsedUrl = new URL(url);
       if (parsedUrl.hostname.includes('facebook.com')) {
-        // Konwersja na mobilny URL Facebooka dla ułatwienia pobrania treści
         parsedUrl.hostname = 'mbasic.facebook.com';
         parsedUrl.search = '';
         cleanUrl = parsedUrl.toString();
@@ -50,7 +48,7 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // Metoda 1: Pobieranie bezpośrednie z mobilnego Facebooka / strony źródłowej
+    // Metoda 1: Pobieranie bezpośrednie z mobilnego Facebooka
     try {
       logMessage('Pobieranie bezpośrednie strony...');
       const directRes = await axios.get(cleanUrl, {
@@ -66,7 +64,7 @@ app.post('/api/parse-event', async (req, res) => {
       logMessage('Pobieranie bezpośrednie nie powiodło się:', e.message);
     }
 
-    // Metoda 2: Jina Reader z wydłużonym czasem (10 sekund)
+    // Metoda 2: Jina Reader (zapasowa)
     if (!extractedText || extractedText.length < 200) {
       try {
         logMessage('Pobieranie przez Jina Reader...');
@@ -94,7 +92,7 @@ app.post('/api/parse-event', async (req, res) => {
       }
     }
 
-    // Metoda 3: Proxy AllOrigins (8 sekund)
+    // Metoda 3: Proxy AllOrigins (zapasowa)
     if (!extractedText || extractedText.length < 200) {
       try {
         logMessage('Pobieranie przez zapasowe proxy CORS...');
@@ -110,7 +108,7 @@ app.post('/api/parse-event', async (req, res) => {
       }
     }
 
-    // Oczyszczanie zebranego kodu HTML z tagów
+    // Oczyszczanie zebranego kodu HTML
     if (extractedText) {
       extractedText = extractedText
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
@@ -123,7 +121,7 @@ app.post('/api/parse-event', async (req, res) => {
       logMessage('BŁĄD: Brak treści do analizy.');
       return res.status(422).json({ 
         error: 'Strona zablokowana lub brak treści',
-        details: 'Facebook lub serwer źródłowy zablokował automatyczne pobranie treści.'
+        details: 'Nie udało się pobrać treści wydarzenia.'
       });
     }
 
@@ -149,7 +147,8 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    const fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+    // Aktualne i wspierane modele API Google Gemini
+    const fallbackModels = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-1.5-flash-latest'];
     let responseText = null;
     let lastError = null;
 
@@ -192,7 +191,7 @@ ZASADY:
     }
 
     const parsedData = JSON.parse(responseText);
-    parsedData.source_url = url; // Zwracamy pierwotny link podany przez użytkownika
+    parsedData.source_url = url;
     
     return res.json(parsedData);
 
