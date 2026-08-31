@@ -365,8 +365,12 @@
                 const gCalStart = startDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
                 const gCalEnd = endDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
 
-                // Format z podwójną nową linią i czystym URL wyłapywanym automatycznie przez parser Google
-                const detailsText = `Wydarzenie wygenerowane z:\n\n${formattedSourceUrl}`;
+                // Budowanie opisu z treścią opisu i klikalnym linkiem
+                let detailsText = '';
+                if (data.description && data.description.trim().length > 0) {
+                    detailsText += `${data.description.trim()}\n\n---\n`;
+                }
+                detailsText += `Wydarzenie wygenerowane z:\n\n${formattedSourceUrl}`;
 
                 const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent(detailsText)}&location=${encodeURIComponent(data.location || '')}`;
                 
