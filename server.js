@@ -27,9 +27,6 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // Zapamiętujemy oryginalny URL, aby przekazać go do pola source_url
-    const originalUrl = url;
-
     // 1. Oczyszczanie linku Facebooka z parametrów śledzących
     try {
       const cleanUrlObj = new URL(url);
@@ -167,13 +164,13 @@ ZASADY:
       throw lastError || new Error('Brak odpowiedzi z API Gemini');
     }
 
-    const eventData = JSON.parse(responseText);
-    
-    // Gwarantujemy, że w odpowiedzi do frontendu znajdzie się pełny link w polu source_url
-    eventData.source_url = originalUrl;
-
     logMessage('Pomyślnie przetworzono wydarzenie.');
-    res.json(eventData);
+    
+    // JEDYNA ZMIANA: Doklejamy link źródłowy do wyjściowego obiektu JSON przed wysłaniem do frontendu
+    const parsedData = JSON.parse(responseText);
+    parsedData.source_url = url;
+    
+    res.json(parsedData);
 
   } catch (error) {
     logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
