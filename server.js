@@ -27,6 +27,8 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
+    const originalUrl = url;
+
     // 1. Oczyszczanie linku Facebooka z parametrów śledzących
     try {
       const cleanUrlObj = new URL(url);
@@ -116,7 +118,7 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    // 5. Wywołanie Gemini z odpornością na zmiany modeli (od najnowszych 3.x/2.x)
+    // 5. Wywołanie Gemini
     const activeModels = [
       'gemini-3.7-flash',
       'gemini-3.6-flash',
@@ -148,7 +150,7 @@ ${extractedText.slice(0, 30000)}
 ZASADY:
 1. Rok: Podany w tekście lub załóż 2026.
 2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
-3. Zwróć JSON zgodny ze schematem.`;
+3. Zwróć JSON zgodny ze schematem. W polu source_url podaj dokładnie ten URL: ${url}`;
 
         const result = await model.generateContent(promptText);
         responseText = result.response.text();
@@ -164,8 +166,13 @@ ZASADY:
       throw lastError || new Error('Brak odpowiedzi z API Gemini');
     }
 
+    const eventData = JSON.parse(responseText);
+
+    // Sztywne wymuszenie poprawnego source_url dla frontendu (gwarantuje klikalny link)
+    eventData.source_url = url || originalUrl;
+
     logMessage('Pomyślnie przetworzono wydarzenie.');
-    res.json(JSON.parse(responseText));
+    res.json(eventData);
 
   } catch (error) {
     logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
