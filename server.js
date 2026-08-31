@@ -21,8 +21,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'pl,en-US;q=0.7,en;q=0.3',
-  'Cache-Control': 'no-cache'
+  'Accept-Language': 'pl,en-US;q=0.7,en;q=0.3'
 };
 
 app.post('/api/parse-event', async (req, res) => {
@@ -38,7 +37,6 @@ app.post('/api/parse-event', async (req, res) => {
     try {
       const parsedUrl = new URL(url);
       if (parsedUrl.hostname.includes('facebook.com')) {
-        parsedUrl.hostname = 'mbasic.facebook.com';
         parsedUrl.search = '';
         cleanUrl = parsedUrl.toString();
       }
@@ -48,67 +46,52 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // Metoda 1: Pobieranie bezpośrednie z mobilnego Facebooka
+    // Metoda 1: Jina Reader jako priorytet dla Facebooka (omija blokady serwerowe)
     try {
-      logMessage('Pobieranie bezpośrednie strony...');
-      const directRes = await axios.get(cleanUrl, {
-        headers: BROWSER_HEADERS,
-        timeout: 8000
+      logMessage('Pobieranie przez Jina Reader...');
+      const headers = {
+        ...BROWSER_HEADERS,
+        'X-With-Generated-Alt': 'true',
+        'X-No-Cache': 'true'
+      };
+
+      if (process.env.JINA_API_KEY) {
+        headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
+      }
+
+      const jinaRes = await axios.get(`https://r.jina.ai/${cleanUrl}`, {
+        headers,
+        timeout: 10000
       });
 
-      if (directRes.data && typeof directRes.data === 'string' && directRes.data.length > 200) {
-        extractedText = directRes.data;
-        logMessage('Sukces: Pobrano treść bezpośrednio.');
+      if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 200) {
+        extractedText = jinaRes.data;
+        logMessage('Sukces: Pobrano treść przez Jina Reader.');
       }
     } catch (e) {
-      logMessage('Pobieranie bezpośrednie nie powiodło się:', e.message);
+      logMessage('Jina Reader zgłosił błąd/timeout:', e.message);
     }
 
-    // Metoda 2: Jina Reader (zapasowa)
+    // Metoda 2: Zapasowe pobieranie bezpośrednie z mobilnej wersji mbasic
     if (!extractedText || extractedText.length < 200) {
       try {
-        logMessage('Pobieranie przez Jina Reader...');
-        const headers = {
-          ...BROWSER_HEADERS,
-          'X-With-Generated-Alt': 'true',
-          'X-No-Cache': 'true'
-        };
-
-        if (process.env.JINA_API_KEY) {
-          headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
-        }
-
-        const jinaRes = await axios.get(`https://r.jina.ai/${cleanUrl}`, {
-          headers,
-          timeout: 10000
-        });
-
-        if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 100) {
-          extractedText = jinaRes.data;
-          logMessage('Sukces: Pobrano treść przez Jina Reader.');
-        }
-      } catch (e) {
-        logMessage('Jina Reader zgłosił błąd/timeout:', e.message);
-      }
-    }
-
-    // Metoda 3: Proxy AllOrigins (zapasowa)
-    if (!extractedText || extractedText.length < 200) {
-      try {
-        logMessage('Pobieranie przez zapasowe proxy CORS...');
-        const proxyRes = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(cleanUrl)}`, {
+        logMessage('Pobieranie bezpośrednie z mbasic...');
+        const mbasicUrl = cleanUrl.replace('www.facebook.com', 'mbasic.facebook.com');
+        const directRes = await axios.get(mbasicUrl, {
+          headers: BROWSER_HEADERS,
           timeout: 8000
         });
 
-        if (proxyRes.data && typeof proxyRes.data === 'string') {
-          extractedText = proxyRes.data;
+        if (directRes.data && typeof directRes.data === 'string' && directRes.data.length > 200) {
+          extractedText = directRes.data;
+          logMessage('Sukces: Pobrano treść bezpośrednio z mbasic.');
         }
-      } catch (proxyErr) {
-        logMessage('Zapasowe proxy zgłosiło błąd:', proxyErr.message);
+      } catch (e) {
+        logMessage('Pobieranie bezpośrednie nie powiodło się:', e.message);
       }
     }
 
-    // Oczyszczanie zebranego kodu HTML
+    // Czyszczenie kodu z tagów HTML
     if (extractedText) {
       extractedText = extractedText
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
@@ -147,10 +130,17 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    // Aktualne i wspierane modele API Google Gemini
-    const fallbackModels = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-1.5-flash-latest'];
-    let responseText = null;
-    let lastError = null;
+    // Wykorzystanie domyślnego, działającego modelu gemini-3.6-flash
+    const activeModel = 'gemini-3.6-flash';
+    logMessage(`Przetwarzanie przez model: ${activeModel}`);
+
+    const model = genAI.getGenerativeModel({
+      model: activeModel,
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: schema
+      }
+    });
 
     const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
 URL: ${cleanUrl}
@@ -160,35 +150,10 @@ ${extractedText.slice(0, 20000)}
 ZASADY:
 1. Rok: Podany w tekście lub załóż 2026.
 2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
-3. Zwróć JSON zgodny ze schematem.`;
+3. Zwróć JSON zgodny ze schematem. Nie pozostawiaj pól pustych jeśli dane istnieją w tekście.`;
 
-    for (const modelName of fallbackModels) {
-      try {
-        logMessage(`Próba z modelem: ${modelName}`);
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          generationConfig: {
-            responseMimeType: 'application/json',
-            responseSchema: schema
-          }
-        });
-
-        const result = await model.generateContent(promptText);
-        responseText = result.response.text();
-        logMessage(`Sukces! Model ${modelName} przetworzył zapytanie.`);
-        break;
-      } catch (err) {
-        logMessage(`Model ${modelName} zgłosił błąd: ${err.message}`);
-        lastError = err;
-      }
-    }
-
-    if (!responseText) {
-      return res.status(500).json({
-        error: 'Błąd API AI',
-        details: lastError ? lastError.message : 'Żaden z modeli Gemini nie zwrócił wyniku.'
-      });
-    }
+    const result = await model.generateContent(promptText);
+    const responseText = result.response.text();
 
     const parsedData = JSON.parse(responseText);
     parsedData.source_url = url;
@@ -198,8 +163,8 @@ ZASADY:
   } catch (error) {
     logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
     return res.status(500).json({ 
-      error: 'Błąd serwera', 
-      details: error.message || 'Wystąpił nieoczekiwany błąd.'
+      error: 'Błąd przetwarzania wydarzenia', 
+      details: error.message || 'Wystąpił błąd podczas analizy.'
     });
   }
 });
