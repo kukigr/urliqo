@@ -215,29 +215,7 @@
             background-color: #36a420;
         }
 
-        #loader {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-        
-        .spinner-icon {
-          width: 18px;
-          height: 18px;
-          border: 3px solid rgba(0, 0, 0, 0.1);
-          border-top-color: #007bff; /* Kolor obracającego się paska */
-          border-radius: 50%;
-          animation: spin 0.8s infinite linear;
-        }
-        
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-
-        
+               
     </style>
 </head>
 <body>
@@ -258,9 +236,7 @@
             <button type="submit" class="btn-submit" id="submitBtn">Generuj linki do Kalendarza</button>
         </form>
 
-        <div class="loader" id="loader">
-             <span class="spinner-icon"></span> Analizowanie strony przez AI...
-        </div>
+        <div class="loader" id="loader">Analizowanie strony przez AI...</div>
         
         <div class="error-message" id="errorMessage">
             <div id="errorTitle"></div>
