@@ -28,6 +28,7 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
+    // Czyszczenie zbędnych parametrów śledzących
     try {
       const cleanUrlObj = new URL(url);
       cleanUrlObj.searchParams.delete('_gl');
@@ -38,20 +39,16 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // Próba pobrania bezpośredniego z symulacją przeglądarki użytkownika
+    // PRÓBA 1: Bezpośrednie pobranie przez Axios z długim timeoutem (15 sekund)
     try {
-      logMessage('Pobieranie strony (Próba Axios)...');
+      logMessage('Pobieranie strony (Próba 1 - Axios)...');
       const response = await axios.get(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Upgrade-Insecure-Requests': '1'
+          'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7'
         },
-        timeout: 10000
+        timeout: 15000
       });
 
       if (typeof response.data === 'string') {
@@ -63,9 +60,31 @@ app.post('/api/parse-event', async (req, res) => {
           .slice(0, 40000);
       }
     } catch (fetchErr) {
-      logMessage('Próba Axios nie powiodła się:', fetchErr.message);
+      logMessage('Próba 1 (Axios) nie powiodła się:', fetchErr.message);
     }
 
+    // PRÓBA 2: Pobranie przez zapasowe proxy CORS (dla stron blokujących IP z chmury jak FB/Cloudflare)
+    if (!extractedText || extractedText.trim().length < 150) {
+      try {
+        logMessage('Próba 2: Używanie Zapasowego Proxy dla stron z zabezpieczeniami...');
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const proxyResponse = await axios.get(proxyUrl, { timeout: 15000 });
+
+        if (proxyResponse.data && proxyResponse.data.contents) {
+          extractedText = proxyResponse.data.contents
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+            .replace(/<[^>]+>/g, '\n')
+            .replace(/\n\s*\n/g, '\n')
+            .slice(0, 40000);
+          logMessage('Sukces Pobierania przez Proxy!');
+        }
+      } catch (proxyErr) {
+        logMessage('Błąd Proxy:', proxyErr.message);
+      }
+    }
+
+    // Jeśli strona całkowicie zablokowała dostęp
     if (!extractedText || extractedText.trim().length < 50) {
       logMessage('BŁĄD: Strona jest zablokowana przez zabezpieczenia antybotowe.');
       return res.status(422).json({ 
@@ -98,9 +117,9 @@ app.post('/api/parse-event', async (req, res) => {
 
     logMessage('Wysyłanie zapytania do Gemini...');
     
-    // Użycie stabilnej nazwy modelu
+    // Użycie aktualnego modelu gemini-2.5-flash
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash-latest',
+      model: 'gemini-2.5-flash',
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: schema
