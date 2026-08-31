@@ -18,6 +18,9 @@ function logMessage(message, data = null) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Pomocnicza funkcja do robienia pauzy przy błędach 503
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 app.post('/api/parse-event', async (req, res) => {
   try {
     let { url } = req.body;
@@ -27,7 +30,7 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // Bezpieczne czyszczenie linku Facebooka
+    // Czyszczenie linku Facebooka
     let cleanUrl = url;
     try {
       const parsedUrl = new URL(url);
@@ -36,7 +39,7 @@ app.post('/api/parse-event', async (req, res) => {
         cleanUrl = parsedUrl.toString();
       }
     } catch (e) {
-      logMessage('Nie udało się sparsować URL jako wyczyścić, używam oryginału');
+      logMessage('Nie udało się sparsować URL do wyczyszczenia, używam oryginału');
     }
 
     let extractedText = '';
@@ -118,8 +121,9 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
+    // Tylko aktualne i aktywne modele Gemini
     const activeModels = [
-      'gemini-2.5-flash',
+      'gemini-2.0-flash',
       'gemini-1.5-flash'
     ];
 
@@ -127,17 +131,19 @@ app.post('/api/parse-event', async (req, res) => {
     let lastError = null;
 
     for (const modelName of activeModels) {
-      try {
-        logMessage(`Próba z modelem: ${modelName}`);
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          generationConfig: {
-            responseMimeType: 'application/json',
-            responseSchema: schema
-          }
-        });
+      // Ponawiamy próbę do 2 razy dla każdego modelu w przypadku błędu 503
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          logMessage(`Próba (${attempt}/2) z modelem: ${modelName}`);
+          const model = genAI.getGenerativeModel({
+            model: modelName,
+            generationConfig: {
+              responseMimeType: 'application/json',
+              responseSchema: schema
+            }
+          });
 
-        const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
+          const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
 URL: ${cleanUrl}
 Tekst strony:
 ${extractedText.slice(0, 30000)}
@@ -147,20 +153,27 @@ ZASADY:
 2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
 3. Zwróć JSON zgodny ze schematem.`;
 
-        const result = await model.generateContent(promptText);
-        responseText = result.response.text();
-        logMessage(`Sukces! Model ${modelName} przetworzył zapytanie.`);
-        break;
-      } catch (err) {
-        logMessage(`Model ${modelName} zgłosił błąd: ${err.message}`);
-        lastError = err;
+          const result = await model.generateContent(promptText);
+          responseText = result.response.text();
+          logMessage(`Sukces! Model ${modelName} przetworzył zapytanie.`);
+          break;
+        } catch (err) {
+          logMessage(`Model ${modelName} (próba ${attempt}) zgłosił błąd: ${err.message}`);
+          lastError = err;
+          
+          if (attempt < 2) {
+            await sleep(2000); // Odczekaj 2 sekundy przed drugą próbą
+          }
+        }
       }
+
+      if (responseText) break;
     }
 
     if (!responseText) {
       return res.status(500).json({
         error: 'Błąd API AI',
-        details: lastError ? lastError.message : 'Żaden z modeli Gemini nie zwrócił wyniku.'
+        details: lastError ? lastError.message : 'Żaden z modeli Gemini nie returned wyniku.'
       });
     }
 
@@ -178,5 +191,5 @@ ZASADY:
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Urliqo działa na porcie ${PORT}`));
