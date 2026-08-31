@@ -37,7 +37,7 @@ app.post('/api/parse-event', async (req, res) => {
     try {
       const parsedUrl = new URL(url);
       if (parsedUrl.hostname.includes('facebook.com')) {
-        parsedUrl.search = '';
+        parsedUrl.hostname = 'mbasic.facebook.com';
         cleanUrl = parsedUrl.toString();
       }
     } catch (e) {
@@ -46,52 +46,50 @@ app.post('/api/parse-event', async (req, res) => {
 
     let extractedText = '';
 
-    // Metoda 1: Jina Reader jako priorytet dla Facebooka (omija blokady serwerowe)
+    // Metoda 1: Pobieranie bezpośrednie z mobilnej wersji (działało najszybciej i najskuteczniej)
     try {
-      logMessage('Pobieranie przez Jina Reader...');
-      const headers = {
-        ...BROWSER_HEADERS,
-        'X-With-Generated-Alt': 'true',
-        'X-No-Cache': 'true'
-      };
-
-      if (process.env.JINA_API_KEY) {
-        headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
-      }
-
-      const jinaRes = await axios.get(`https://r.jina.ai/${cleanUrl}`, {
-        headers,
-        timeout: 10000
+      logMessage('Pobieranie bezpośrednie strony...');
+      const directRes = await axios.get(cleanUrl, {
+        headers: BROWSER_HEADERS,
+        timeout: 8000
       });
 
-      if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 200) {
-        extractedText = jinaRes.data;
-        logMessage('Sukces: Pobrano treść przez Jina Reader.');
+      if (directRes.data && typeof directRes.data === 'string' && directRes.data.length > 200) {
+        extractedText = directRes.data;
+        logMessage('Sukces: Pobrano treść bezpośrednio.');
       }
     } catch (e) {
-      logMessage('Jina Reader zgłosił błąd/timeout:', e.message);
+      logMessage('Pobieranie bezpośrednie nie powiodło się:', e.message);
     }
 
-    // Metoda 2: Zapasowe pobieranie bezpośrednie z mobilnej wersji mbasic
+    // Metoda 2: Jina Reader (tylko w razie niepowodzenia metody 1)
     if (!extractedText || extractedText.length < 200) {
       try {
-        logMessage('Pobieranie bezpośrednie z mbasic...');
-        const mbasicUrl = cleanUrl.replace('www.facebook.com', 'mbasic.facebook.com');
-        const directRes = await axios.get(mbasicUrl, {
-          headers: BROWSER_HEADERS,
-          timeout: 8000
+        logMessage('Pobieranie przez Jina Reader...');
+        const headers = {
+          ...BROWSER_HEADERS,
+          'X-With-Generated-Alt': 'true',
+          'X-No-Cache': 'true'
+        };
+
+        if (process.env.JINA_API_KEY) {
+          headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
+        }
+
+        const jinaRes = await axios.get(`https://r.jina.ai/${url}`, {
+          headers,
+          timeout: 10000
         });
 
-        if (directRes.data && typeof directRes.data === 'string' && directRes.data.length > 200) {
-          extractedText = directRes.data;
-          logMessage('Sukces: Pobrano treść bezpośrednio z mbasic.');
+        if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 100) {
+          extractedText = jinaRes.data;
+          logMessage('Sukces: Pobrano treść przez Jina Reader.');
         }
       } catch (e) {
-        logMessage('Pobieranie bezpośrednie nie powiodło się:', e.message);
+        logMessage('Jina Reader zgłosił błąd/timeout:', e.message);
       }
     }
 
-    // Czyszczenie kodu z tagów HTML
     if (extractedText) {
       extractedText = extractedText
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
@@ -112,6 +110,7 @@ app.post('/api/parse-event', async (req, res) => {
       type: SchemaType.OBJECT,
       properties: {
         title: { type: SchemaType.STRING, description: 'Nazwa wydarzenia' },
+        description: { type: SchemaType.STRING, description: 'Krótkie podsumowanie lub pełny opis wydarzenia ze strony' },
         location: { type: SchemaType.STRING, description: 'Pełny adres lub nazwa miejsca i miasto' },
         source_url: { type: SchemaType.STRING, description: 'Link źródłowy' },
         days: {
@@ -127,10 +126,9 @@ app.post('/api/parse-event', async (req, res) => {
           }
         }
       },
-      required: ['title', 'location', 'source_url', 'days']
+      required: ['title', 'description', 'location', 'source_url', 'days']
     };
 
-    // Wykorzystanie domyślnego, działającego modelu gemini-3.6-flash
     const activeModel = 'gemini-3.6-flash';
     logMessage(`Przetwarzanie przez model: ${activeModel}`);
 
@@ -143,14 +141,15 @@ app.post('/api/parse-event', async (req, res) => {
     });
 
     const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
-URL: ${cleanUrl}
+URL: ${url}
 Tekst strony:
 ${extractedText.slice(0, 20000)}
 
 ZASADY:
 1. Rok: Podany w tekście lub załóż 2026.
 2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
-3. Zwróć JSON zgodny ze schematem. Nie pozostawiaj pól pustych jeśli dane istnieją w tekście.`;
+3. Opis (description): Wyciągnij podsumowanie opisu wydarzenia lub cały opis jeśli jest krótki.
+4. Zwróć JSON zgodny ze schematem.`;
 
     const result = await model.generateContent(promptText);
     const responseText = result.response.text();
