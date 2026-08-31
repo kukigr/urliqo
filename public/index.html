@@ -5,265 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Urliqo – Generator Kalendarza</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
-
-        body {
-            background-color: #f0f2f5;
-            color: #1c1e21;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .container {
-            background-color: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-            width: 100%;
-            max-width: 520px;
-            padding: 28px;
-        }
-
-        .header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 16px;
-        }
-
-        .header-icon {
-            font-size: 24px;
-        }
-
-        h1 {
-            color: #1a1a1a;
-            font-size: 22px;
-            font-weight: 700;
-        }
-
-        p.subtitle {
-            color: #606770;
-            font-size: 14px;
-            margin-bottom: 16px;
-            line-height: 1.4;
-        }
-
-        .input-wrapper {
-            position: relative;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-        }
-
-        input[type="url"] {
-            width: 100%;
-            padding: 12px 40px 12px 14px;
-            border: 1px solid #ccd0d5;
-            border-radius: 8px;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        input[type="url"]:focus {
-            border-color: #1877f2;
-        }
-
-        .btn-clear {
-            position: absolute;
-            right: 10px;
-            background: #e4e6eb;
-            border: none;
-            color: #606770;
-            font-size: 14px;
-            width: 22px;
-            height: 22px;
-            border-radius: 50%;
-            cursor: pointer;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-            transition: background 0.2s, color 0.2s;
-        }
-
-        .btn-clear:hover {
-            background: #d8dadf;
-            color: #050505;
-        }
-
-        button.btn-submit {
-            width: 100%;
-            background-color: #1877f2;
-            color: white;
-            border: none;
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        button.btn-submit:hover {
-            background-color: #166fe5;
-        }
-
-        button.btn-submit:disabled {
-            background-color: #e4e6eb;
-            color: #bcc0c4;
-            cursor: not-allowed;
-        }
-
-        .loader {
-            display: none;
-            text-align: center;
-            margin-top: 16px;
-            font-size: 14px;
-            color: #1877f2;
-            font-weight: 500;
-        }
-
-        .hourglass-icon {
-            display: inline-block;
-            animation: spin 1.5s infinite linear;
-            margin-right: 6px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .error-message {
-            display: none;
-            margin-top: 16px;
-            color: #fa383e;
-            font-size: 14px;
-            line-height: 1.4;
-        }
-
-        .error-details {
-            font-size: 12px;
-            color: #65676b;
-            margin-top: 4px;
-        }
-
-        .results {
-            display: none;
-            margin-top: 20px;
-            border-top: 1px solid #e4e6eb;
-            padding-top: 20px;
-        }
-
-        .event-title {
-            font-size: 18px;
-            font-weight: 700;
-            color: #1c1e21;
-            margin-bottom: 6px;
-        }
-
-        .event-location {
-            font-size: 13px;
-            color: #606770;
-            margin-bottom: 6px;
-        }
-
-        .event-source {
-            font-size: 12px;
-            color: #606770;
-            margin-bottom: 16px;
-            word-break: break-all;
-        }
-
-        .event-source a {
-            color: #1877f2;
-            text-decoration: none;
-        }
-
-        .event-source a:hover {
-            text-decoration: underline;
-        }
-
-        .days-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .day-card {
-            background-color: #f7f8fa;
-            border: 1px solid #e4e6eb;
-            border-radius: 8px;
-            padding: 12px 14px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .day-info {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .day-name {
-            font-weight: 600;
-            font-size: 14px;
-            color: #1c1e21;
-        }
-
-        .day-time {
-            font-size: 12px;
-            color: #606770;
-        }
-
-        .btn-calendar {
-            background-color: #42b72a;
-            color: white;
-            text-decoration: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 13px;
-            font-weight: 600;
-            transition: background-color 0.2s;
-            white-space: nowrap;
-        }
-
-        .btn-calendar:hover {
-            background-color: #36a420;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #f0f2f5; color: #1c1e21; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .container { background: #fff; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); width: 100%; max-width: 520px; padding: 28px; }
+        .header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+        h1 { font-size: 22px; font-weight: 700; }
+        p.subtitle { color: #606770; font-size: 14px; margin-bottom: 16px; }
+        .input-wrapper { position: relative; margin-bottom: 12px; }
+        input[type="url"] { width: 100%; padding: 12px 40px 12px 14px; border: 1px solid #ccd0d5; border-radius: 8px; font-size: 14px; outline: none; }
+        input[type="url"]:focus { border-color: #1877f2; }
+        .btn-clear { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: #e4e6eb; border: none; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; display: none; align-items: center; justify-content: center; }
+        button.btn-submit { width: 100%; background: #1877f2; color: #fff; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+        button.btn-submit:disabled { background: #e4e6eb; color: #bcc0c4; cursor: not-allowed; }
+        .loader { display: none; text-align: center; margin-top: 16px; color: #1877f2; font-weight: 500; }
+        .error-message { display: none; margin-top: 16px; color: #fa383e; font-size: 14px; }
+        .error-details { font-size: 12px; color: #65676b; margin-top: 4px; }
+        .results { display: none; margin-top: 20px; border-top: 1px solid #e4e6eb; padding-top: 20px; }
+        .event-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+        .event-location { font-size: 13px; color: #606770; margin-bottom: 6px; }
+        .event-source { font-size: 12px; color: #606770; margin-bottom: 16px; word-break: break-all; }
+        .event-source a { color: #1877f2; text-decoration: none; }
+        .days-list { display: flex; flex-direction: column; gap: 10px; }
+        .day-card { background: #f7f8fa; border: 1px solid #e4e6eb; border-radius: 8px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
+        .day-name { font-weight: 600; font-size: 14px; }
+        .day-time { font-size: 12px; color: #606770; }
+        .btn-calendar { background: #42b72a; color: white; text-decoration: none; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; }
     </style>
 </head>
 <body>
-
     <div class="container">
         <div class="header">
-            <span class="header-icon">📅</span>
+            <span>📅</span>
             <h1>Urliqo</h1>
         </div>
-        
-        <p class="subtitle">Wklej link do wydarzenia (np. z Facebooka, Going itp.):</p>
+        <p class="subtitle">Wklej link do wydarzenia:</p>
 
         <form id="eventForm">
             <div class="input-wrapper">
-                <input type="url" id="urlInput" placeholder="https://..." required autocomplete="off">
-                <button type="button" class="btn-clear" id="btnClear" title="Wyczyść pole">✕</button>
+                <input type="url" id="urlInput" placeholder="https://..." required>
+                <button type="button" class="btn-clear" id="btnClear">✕</button>
             </div>
             <button type="submit" class="btn-submit" id="submitBtn">Generuj linki do Kalendarza</button>
         </form>
 
-        <div class="loader" id="loader">
-            <span class="hourglass-icon">⏳</span> Analizowanie strony przez AI...
-        </div>
-        
+        <div class="loader" id="loader">⏳ Analizowanie wydarzenia...</div>
         <div class="error-message" id="errorMessage">
             <div id="errorTitle"></div>
             <div class="error-details" id="errorDetails"></div>
@@ -284,13 +69,7 @@
         const submitBtn = document.getElementById('submitBtn');
         const loader = document.getElementById('loader');
         const errorMessage = document.getElementById('errorMessage');
-        const errorTitle = document.getElementById('errorTitle');
-        const errorDetails = document.getElementById('errorDetails');
         const results = document.getElementById('results');
-        const eventTitle = document.getElementById('eventTitle');
-        const eventLocation = document.getElementById('eventLocation');
-        const eventSource = document.getElementById('eventSource');
-        const daysList = document.getElementById('daysList');
 
         urlInput.addEventListener('input', () => {
             btnClear.style.display = urlInput.value.length > 0 ? 'flex' : 'none';
@@ -301,13 +80,11 @@
             btnClear.style.display = 'none';
             errorMessage.style.display = 'none';
             results.style.display = 'none';
-            urlInput.focus();
         });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const url = urlInput.value.trim();
-
             if (!url) return;
 
             errorMessage.style.display = 'none';
@@ -325,65 +102,65 @@
                 const data = await response.json();
 
                 if (!response.ok) {
-                    showError(data.error || 'Wystąpił nieznany błąd.', data.details || '');
+                    document.getElementById('errorTitle').textContent = data.error || 'Błąd';
+                    document.getElementById('errorDetails').textContent = data.details || '';
+                    errorMessage.style.display = 'block';
                     return;
                 }
 
                 renderResults(data);
-
             } catch (err) {
-                showError('Błąd połączenia z serwerem', 'Sprawdź swoje połączenie internetowe i spróbuj ponownie.');
+                document.getElementById('errorTitle').textContent = 'Błąd połączenia z serwerem';
+                document.getElementById('errorDetails').textContent = err.message;
+                errorMessage.style.display = 'block';
             } finally {
                 loader.style.display = 'none';
                 submitBtn.disabled = false;
             }
         });
 
-        function showError(title, details) {
-            errorTitle.textContent = title;
-            errorDetails.textContent = details;
-            errorMessage.style.display = 'block';
-        }
-
         function renderResults(data) {
-            eventTitle.textContent = data.title;
-            eventLocation.textContent = data.location ? `📍 ${data.location}` : '📍 Brak podanej lokalizacji';
-
+            document.getElementById('eventTitle').textContent = data.title;
+            document.getElementById('eventLocation').textContent = data.location ? `📍 ${data.location}` : '📍 Brak lokalizacji';
+            
             const rawUrl = data.source_url || urlInput.value.trim();
-            const formattedSourceUrl = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`;
-            eventSource.innerHTML = `🔗 Wydarzenie wygenerowane z: <a href="${formattedSourceUrl}" target="_blank" rel="noopener noreferrer">${formattedSourceUrl}</a>`;
+            document.getElementById('eventSource').innerHTML = `🔗 Wydarzenie wygenerowane z: <a href="${rawUrl}" target="_blank">${rawUrl}</a>`;
 
+            const daysList = document.getElementById('daysList');
             daysList.innerHTML = '';
 
             data.days.forEach(day => {
                 const startDate = new Date(day.start_time_utc);
                 const endDate = new Date(day.end_time_utc);
 
-                const formatDate = (date) => date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
-                const formatTime = (date) => date.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+                const formatDate = (d) => d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
+                const formatTime = (d) => d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
 
                 const gCalStart = startDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
                 const gCalEnd = endDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
 
-                // Budowanie opisu z treścią opisu i klikalnym linkiem
-                let detailsText = '';
-                if (data.description && data.description.trim().length > 0) {
-                    detailsText += `${data.description.trim()}\n\n---\n`;
+                // Budowanie parametru details (Opis + Link źródłowy)
+                let fullDetails = '';
+                if (data.description && data.description.trim() !== '') {
+                    fullDetails += `${data.description.trim()}\n\n---\n`;
                 }
-                detailsText += `Wydarzenie wygenerowane z:\n\n${formattedSourceUrl}`;
+                fullDetails += `Wydarzenie wygenerowane z:\n${rawUrl}`;
 
-                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent(detailsText)}&location=${encodeURIComponent(data.location || '')}`;
-                
+                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE` +
+                    `&text=${encodeURIComponent(data.title)}` +
+                    `&dates=${gCalStart}/${gCalEnd}` +
+                    `&details=${encodeURIComponent(fullDetails)}` +
+                    `&location=${encodeURIComponent(data.location || '')}`;
+
                 const dayCard = document.createElement('div');
                 dayCard.className = 'day-card';
                 dayCard.innerHTML = `
-                    <div class="day-info">
+                    <div>
                         <div class="day-name">Dzień ${day.day_number} (${formatDate(startDate)})</div>
                         <div class="day-time">${formatTime(startDate)} - ${formatTime(endDate)}</div>
                     </div>
                     <a href="${gCalUrl}" target="_blank" class="btn-calendar">Dodaj do Kalendarza</a>
                 `;
-
                 daysList.appendChild(dayCard);
             });
 
