@@ -2,7 +2,6 @@ import express from 'express';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import https from 'https';
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 
 dotenv.config();
@@ -18,7 +17,6 @@ function logMessage(message, data = null) {
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 app.post('/api/parse-event', async (req, res) => {
   try {
@@ -26,59 +24,48 @@ app.post('/api/parse-event', async (req, res) => {
     logMessage(`Otrzymano żądanie dla URL: ${url}`);
 
     if (!url) {
+      logMessage('Błąd: Brak adresu URL');
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // Bezpieczne czyszczenie śledzenia z URL
     try {
-      const parsedUrl = new URL(url);
-      if (parsedUrl.search) {
-        parsedUrl.searchParams.delete('_gl');
-        parsedUrl.searchParams.delete('_gcl_au');
-        parsedUrl.searchParams.delete('fbclid');
-        url = parsedUrl.toString();
-      }
+      const cleanUrlObj = new URL(url);
+      cleanUrlObj.searchParams.delete('_gl');
+      cleanUrlObj.searchParams.delete('_gcl_au');
+      cleanUrlObj.searchParams.delete('fbclid');
+      url = cleanUrlObj.toString();
     } catch (e) {}
 
     let extractedText = '';
 
-    // PROBA 1: Pobieranie bezpośrednie z wydłużonym czasem (12 sekund)
+    // Próba pobrania bezpośredniego z symulacją przeglądarki użytkownika
     try {
-      logMessage('Pobieranie strony (Próba 1 - Axios)...');
+      logMessage('Pobieranie strony (Próba Axios)...');
       const response = await axios.get(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7'
+          'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Upgrade-Insecure-Requests': '1'
         },
-        timeout: 12000,
-        httpsAgent: httpsAgent
+        timeout: 10000
       });
 
       if (typeof response.data === 'string') {
-        extractedText = cleanHtml(response.data);
+        extractedText = response.data
+          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+          .replace(/<[^>]+>/g, '\n')
+          .replace(/\n\s*\n/g, '\n')
+          .slice(0, 40000);
       }
     } catch (fetchErr) {
-      logMessage('Próba 1 (Axios) nie powiodła się:', fetchErr.message);
+      logMessage('Próba Axios nie powiodła się:', fetchErr.message);
     }
 
-    // PROBA 2: Odpowiednik Jina AI bez wymogu API Key (używamy publicznego proxy AllOrigins)
-    if (!extractedText || extractedText.trim().length < 100) {
-      try {
-        logMessage('Próba 2: Używanie Proxy (AllOrigins)...');
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-        const proxyResponse = await axios.get(proxyUrl, { timeout: 15000 });
-
-        if (proxyResponse.data && proxyResponse.data.contents) {
-          extractedText = cleanHtml(proxyResponse.data.contents);
-          logMessage('Sukces Proxy AllOrigins!');
-        }
-      } catch (proxyErr) {
-        logMessage('Błąd Proxy:', proxyErr.message);
-      }
-    }
-
-    // Jeśli strona całkowicie zablokowała dostęp
     if (!extractedText || extractedText.trim().length < 50) {
       logMessage('BŁĄD: Strona jest zablokowana przez zabezpieczenia antybotowe.');
       return res.status(422).json({ 
@@ -110,8 +97,10 @@ app.post('/api/parse-event', async (req, res) => {
     };
 
     logMessage('Wysyłanie zapytania do Gemini...');
+    
+    // Użycie stabilnej nazwy modelu
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-1.5-flash-latest',
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: schema
@@ -145,15 +134,6 @@ ZASADY:
     });
   }
 });
-
-function cleanHtml(html) {
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .slice(0, 35000);
-}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Aplikacja Urliqo działa na porcie ${PORT}`));
