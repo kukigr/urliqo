@@ -130,7 +130,13 @@ ZASADY:
 3. Zwróć JSON zgodny ze schematem.`;
 
     // 5. Wywołanie Gemini z obsługą wielu modeli
-    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
+    const candidateModels = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-pro'
+  ];
     let responseText = null;
     let lastError = null;
 
