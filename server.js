@@ -11,162 +11,136 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-function logMessage(message, data = null) {
-  if (data) console.log(message, data);
-  else console.log(message);
-}
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const BROWSER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'pl,en-US;q=0.7,en;q=0.3'
+  'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7'
 };
 
 app.post('/api/parse-event', async (req, res) => {
   try {
-    let { url } = req.body;
-    logMessage(`Otrzymano żądanie dla URL: ${url}`);
-
+    const { url } = req.body;
     if (!url) {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    let cleanUrl = url;
-    try {
-      const parsedUrl = new URL(url);
-      if (parsedUrl.hostname.includes('facebook.com')) {
-        parsedUrl.hostname = 'mbasic.facebook.com';
-        cleanUrl = parsedUrl.toString();
-      }
-    } catch (e) {
-      logMessage('Nie udało się sparsować URL do wyczyszczenia');
+    console.log(`[LOG] Przetwarzanie URL: ${url}`);
+
+    let targetUrl = url;
+    // Zamiana wersji www na mobilną mbasic bez usuwania parametrów query
+    if (url.includes('facebook.com') && !url.includes('mbasic.facebook.com')) {
+      targetUrl = url.replace('www.facebook.com', 'mbasic.facebook.com')
+                     .replace('web.facebook.com', 'mbasic.facebook.com');
     }
 
-    let extractedText = '';
+    let rawHtml = '';
 
-    // Metoda 1: Pobieranie bezpośrednie z mbasic
+    // Krok 1: Direct fetch z mbasic
     try {
-      logMessage('Pobieranie bezpośrednie strony...');
-      const directRes = await axios.get(cleanUrl, {
+      const response = await axios.get(targetUrl, {
         headers: BROWSER_HEADERS,
         timeout: 8000
       });
-
-      if (directRes.data && typeof directRes.data === 'string' && directRes.data.length > 200) {
-        extractedText = directRes.data;
-        logMessage('Sukces: Pobrano treść bezpośrednio.');
-      }
+      rawHtml = response.data;
     } catch (e) {
-      logMessage('Pobieranie bezpośrednie nie powiodło się:', e.message);
+      console.log(`[LOG] Direct fetch nie powiódł się: ${e.message}`);
     }
 
-    // Metoda 2: Jina Reader (zapasowa)
-    if (!extractedText || extractedText.length < 200) {
+    // Krok 2: Jina Fallback tylko gdy direct fetch zwrócił mniej niż 500 znaków
+    if (!rawHtml || rawHtml.length < 500) {
       try {
-        logMessage('Pobieranie przez Jina Reader...');
-        const headers = {
-          ...BROWSER_HEADERS,
-          'X-With-Generated-Alt': 'true',
-          'X-No-Cache': 'true'
-        };
-
+        console.log('[LOG] Próba pobrania przez Jina Reader...');
+        const jinaHeaders = { ...BROWSER_HEADERS };
         if (process.env.JINA_API_KEY) {
-          headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
+          jinaHeaders['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
         }
-
         const jinaRes = await axios.get(`https://r.jina.ai/${url}`, {
-          headers,
+          headers: jinaHeaders,
           timeout: 10000
         });
-
-        if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 100) {
-          extractedText = jinaRes.data;
-          logMessage('Sukces: Pobrano treść przez Jina Reader.');
+        if (jinaRes.data && jinaRes.data.length > 300) {
+          rawHtml = jinaRes.data;
         }
       } catch (e) {
-        logMessage('Jina Reader zgłosił błąd/timeout:', e.message);
+        console.log(`[LOG] Jina Reader fallback nie powiódł się: ${e.message}`);
       }
     }
 
-    if (extractedText) {
-      extractedText = extractedText
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-        .replace(/<[^>]+>/g, '\n')
-        .replace(/\n\s*\n/g, '\n');
-    }
-
-    if (!extractedText || extractedText.trim().length < 50) {
-      logMessage('BŁĄD: Brak treści do analizy.');
-      return res.status(422).json({ 
-        error: 'Strona zablokowana lub brak treści',
-        details: 'Nie udało się pobrać treści wydarzenia.'
+    // Sanity check pobranej treści
+    if (!rawHtml || rawHtml.length < 200) {
+      return res.status(422).json({
+        error: 'Nie udało się pobrać treści strony',
+        details: 'Facebook zablokował dostęp do wydarzenia lub link jest nieprawidłowy.'
       });
     }
 
+    // Oczyszczanie ze zbędnego kodu
+    const cleanText = rawHtml
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Schemat Gemini
     const schema = {
       type: SchemaType.OBJECT,
       properties: {
-        title: { type: SchemaType.STRING, description: 'Nazwa wydarzenia' },
-        description: { type: SchemaType.STRING, description: 'Podsumowanie lub opisu wydarzenia' },
-        location: { type: SchemaType.STRING, description: 'Pełny adres lub nazwa miejsca i miasto' },
-        source_url: { type: SchemaType.STRING, description: 'Link źródłowy' },
+        title: { type: SchemaType.STRING, description: 'Tytuł wydarzenia' },
+        description: { type: SchemaType.STRING, description: 'Szczegółowy opis wydarzenia, agendę oraz istotne informacje organizacyjne' },
+        location: { type: SchemaType.STRING, description: 'Miejsce wydarzenia (nazwa obiektu, adres, miasto)' },
         days: {
           type: SchemaType.ARRAY,
           items: {
             type: SchemaType.OBJECT,
             properties: {
               day_number: { type: SchemaType.INTEGER },
-              start_time_utc: { type: SchemaType.STRING, description: 'Data i godzina rozpoczęcia UTC w formacie ISO' },
-              end_time_utc: { type: SchemaType.STRING, description: 'Data i godzina zakończenia UTC w formacie ISO' }
+              start_time_utc: { type: SchemaType.STRING, description: 'Data i godzina rozpoczęcia w ISO 8601 UTC' },
+              end_time_utc: { type: SchemaType.STRING, description: 'Data i godzina zakończenia w ISO 8601 UTC' }
             },
             required: ['day_number', 'start_time_utc', 'end_time_utc']
           }
         }
       },
-      required: ['title', 'description', 'location', 'source_url', 'days']
+      required: ['title', 'description', 'location', 'days']
     };
 
-    const activeModel = 'gemini-3.6-flash';
-    logMessage(`Przetwarzanie przez model: ${activeModel}`);
-
     const model = genAI.getGenerativeModel({
-      model: activeModel,
+      model: 'gemini-3.6-flash',
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: schema
       }
     });
 
-    const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
-URL: ${url}
-Tekst strony:
-${extractedText.slice(0, 20000)}
+    const prompt = `Wyciągnij dane o wydarzeniu z poniższego surowego tekstu strony:
+URL źródłowy: ${url}
 
-ZASADY:
-1. Rok: Podany w tekście lub załóż 2026.
-2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
-3. Opis (description): Wyciągnij kluczowe informacje i opis wydarzenia ze strony.
-4. Zwróć JSON zgodny ze schematem.`;
+TEKST STRONY:
+${cleanText.slice(0, 15000)}
 
-    const result = await model.generateContent(promptText);
-    const responseText = result.response.text();
+ZASADY ANALIZY:
+1. Jeżeli rok nie jest wprost podany, przyjmij rok 2026.
+2. Przelicz podane godziny na strefę UTC (Polska: Zima = UTC+1, Lato = UTC+2).
+3. Pole 'description' MUSI zawierać podsumowanie opisu wydarzenia. Wyciągnij kluczowe informacje z tekstu.
+4. Jeżeli w tekście brakuje tytułu lub dat, oznacza to że strona została zablokowana przez login-wall.`;
 
-    const parsedData = JSON.parse(responseText);
+    const result = await model.generateContent(prompt);
+    const parsedData = JSON.parse(result.response.text());
     parsedData.source_url = url;
-    
+
     return res.json(parsedData);
 
   } catch (error) {
-    logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
-    return res.status(500).json({ 
-      error: 'Błąd przetwarzania wydarzenia', 
-      details: error.message || 'Wystąpił błąd podczas analizy.'
+    console.error('[KRYTYCZNY BŁĄD SERWERA]:', error);
+    return res.status(500).json({
+      error: 'Błąd przetwarzenia wydarzenia przez AI',
+      details: error.message
     });
   }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Urliqo działa na porcie ${PORT}`));
+app.listen(PORT, () => console.log(`Urliqo uruchomione na porcie ${PORT}`));
