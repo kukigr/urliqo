@@ -18,9 +18,6 @@ function logMessage(message, data = null) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Pomocnicza funkcja opóźniająca do obsługi retry (np. przy 503 Service Unavailable)
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 app.post('/api/parse-event', async (req, res) => {
   try {
     let { url } = req.body;
@@ -30,7 +27,6 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // Bezpieczne czyszczenie linku Facebooka
     let cleanUrl = url;
     try {
       const parsedUrl = new URL(url);
@@ -39,12 +35,12 @@ app.post('/api/parse-event', async (req, res) => {
         cleanUrl = parsedUrl.toString();
       }
     } catch (e) {
-      logMessage('Nie udało się sparsować URL do wyczyszczenia, używam oryginału');
+      logMessage('Nie udało się sparsować URL do wyczyszczenia');
     }
 
     let extractedText = '';
 
-    // Pobieranie treści przez Jina Reader
+    // Pobieranie przez Jina Reader (z agresywnym timeoutem 7s, żeby nie wieszać serwera)
     try {
       logMessage('Pobieranie przez Jina Reader...');
       const headers = {
@@ -59,7 +55,7 @@ app.post('/api/parse-event', async (req, res) => {
 
       const jinaRes = await axios.get(`https://r.jina.ai/${cleanUrl}`, {
         headers,
-        timeout: 15000
+        timeout: 7000
       });
 
       if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 100) {
@@ -67,15 +63,15 @@ app.post('/api/parse-event', async (req, res) => {
         logMessage('Sukces: Pobrano treść przez Jina Reader.');
       }
     } catch (e) {
-      logMessage('Jina Reader zgłosił błąd:', e.message);
+      logMessage('Jina Reader zgłosił błąd/timeout:', e.message);
     }
 
-    // Zapasowe proxy CORS
+    // Zapasowe proxy CORS (timeout 5s)
     if (!extractedText || extractedText.length < 100) {
       try {
         logMessage('Pobieranie przez zapasowe proxy CORS...');
         const proxyRes = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(cleanUrl)}`, {
-          timeout: 10000
+          timeout: 5000
         });
 
         if (proxyRes.data && typeof proxyRes.data === 'string') {
@@ -98,7 +94,6 @@ app.post('/api/parse-event', async (req, res) => {
       });
     }
 
-    // Schema Gemini
     const schema = {
       type: SchemaType.OBJECT,
       properties: {
@@ -121,71 +116,46 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    // Dynamiczne pobieranie aktualnej listy dostępnych modeli z API Google
-    let availableModels = [];
-    try {
-      const modelsListResponse = await axios.get(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
-      );
-      
-      availableModels = modelsListResponse.data.models
-        .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
-        .map(m => m.name.replace('models/', ''))
-        .filter(name => name.includes('flash') || name.includes('pro'));
-
-      logMessage('Pobrano dynamiczną listę aktywnych modeli:', availableModels);
-    } catch (listErr) {
-      logMessage('Błąd pobierania listy modeli, używam listy awaryjnej:', listErr.message);
-      availableModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-    }
-
+    // Stała, powszechnie szybka lista sprawdzania modeli (bez zbędnego zapytania HTTP po modele na starcie)
+    const fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
     let responseText = null;
     let lastError = null;
 
-    // Próba przetworzenia zapytania przez kolejne dostępne modele
-    for (const modelName of availableModels) {
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          logMessage(`Próba (${attempt}/2) z modelem: ${modelName}`);
-          const model = genAI.getGenerativeModel({
-            model: modelName,
-            generationConfig: {
-              responseMimeType: 'application/json',
-              responseSchema: schema
-            }
-          });
-
-          const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
+    const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
 URL: ${cleanUrl}
 Tekst strony:
-${extractedText.slice(0, 30000)}
+${extractedText.slice(0, 20000)}
 
 ZASADY:
 1. Rok: Podany w tekście lub załóż 2026.
 2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
 3. Zwróć JSON zgodny ze schematem.`;
 
-          const result = await model.generateContent(promptText);
-          responseText = result.response.text();
-          logMessage(`Sukces! Model ${modelName} przetworzył zapytanie.`);
-          break;
-        } catch (err) {
-          logMessage(`Model ${modelName} (próba ${attempt}) zgłosił błąd: ${err.message}`);
-          lastError = err;
-          
-          if (attempt < 2) {
-            await sleep(2000);
+    for (const modelName of fallbackModels) {
+      try {
+        logMessage(`Szybka próba z modelem: ${modelName}`);
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: schema
           }
-        }
-      }
+        });
 
-      if (responseText) break;
+        const result = await model.generateContent(promptText);
+        responseText = result.response.text();
+        logMessage(`Sukces! Model ${modelName} przetworzył zapytanie.`);
+        break;
+      } catch (err) {
+        logMessage(`Model ${modelName} nie odpowiedział: ${err.message}`);
+        lastError = err;
+      }
     }
 
     if (!responseText) {
       return res.status(500).json({
         error: 'Błąd API AI',
-        details: lastError ? lastError.message : 'Żaden z dostępnych modeli Gemini nie zwrócił wyniku.'
+        details: lastError ? lastError.message : 'Żaden z modeli Gemini nie zwrócił wyniku.'
       });
     }
 
