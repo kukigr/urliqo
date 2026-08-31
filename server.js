@@ -20,28 +20,16 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.post('/api/parse-event', async (req, res) => {
   try {
-    let { url } = req.body;
+    const { url } = req.body;
     logMessage(`Otrzymano żądanie dla URL: ${url}`);
 
     if (!url) {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    const originalUrl = url;
-
-    // 1. Oczyszczanie linku Facebooka z parametrów śledzących
-    try {
-      const cleanUrlObj = new URL(url);
-      cleanUrlObj.search = '';
-      url = cleanUrlObj.toString();
-      logMessage(`Oczyszczony URL: ${url}`);
-    } catch (e) {
-      logMessage('Nie udało się oczyścić URL, używam oryginalnego.');
-    }
-
     let extractedText = '';
 
-    // 2. Pobieranie treści przez Jina Reader
+    // 1. Pobieranie treści przez Jina Reader
     try {
       logMessage('Pobieranie przez Jina Reader...');
       const headers = {
@@ -67,7 +55,7 @@ app.post('/api/parse-event', async (req, res) => {
       logMessage('Jina Reader zgłosił błąd:', e.response ? `Status ${e.response.status}` : e.message);
     }
 
-    // 3. Fallback: Pobieranie przez otwarte proxy
+    // 2. Fallback: Pobieranie przez otwarte proxy
     if (!extractedText || extractedText.length < 100) {
       try {
         logMessage('Pobieranie przez zapasowe proxy CORS...');
@@ -95,7 +83,7 @@ app.post('/api/parse-event', async (req, res) => {
       });
     }
 
-    // 4. Schema odpowiedzi dla Gemini
+    // 3. Schema odpowiedzi dla Gemini
     const schema = {
       type: SchemaType.OBJECT,
       properties: {
@@ -118,7 +106,7 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    // 5. Wywołanie Gemini
+    // 4. Wywołanie Gemini
     const activeModels = [
       'gemini-3.7-flash',
       'gemini-3.6-flash',
@@ -150,7 +138,7 @@ ${extractedText.slice(0, 30000)}
 ZASADY:
 1. Rok: Podany w tekście lub załóż 2026.
 2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h; zimowy: odejmij 1h).
-3. Zwróć JSON zgodny ze schematem. W polu source_url podaj dokładnie ten URL: ${url}`;
+3. Zwróć JSON zgodny ze schematem.`;
 
         const result = await model.generateContent(promptText);
         responseText = result.response.text();
@@ -168,8 +156,8 @@ ZASADY:
 
     const eventData = JSON.parse(responseText);
 
-    // Sztywne wymuszenie poprawnego source_url dla frontendu (gwarantuje klikalny link)
-    eventData.source_url = url || originalUrl;
+    // Dopisanie oryginalnego adresu URL do odpowiedzi bez psucia pobierania
+    eventData.source_url = url;
 
     logMessage('Pomyślnie przetworzono wydarzenie.');
     res.json(eventData);
