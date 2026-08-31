@@ -24,71 +24,82 @@ app.post('/api/parse-event', async (req, res) => {
     logMessage(`Otrzymano żądanie dla URL: ${url}`);
 
     if (!url) {
-      logMessage('Błąd: Brak adresu URL');
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // Bezpieczne czyszczenie zbędnych parametrów trackingowych z adresu URL
+    // 1. CZYSZCZENIE URL (Szczególnie ważne dla FB i Tobilet)
     try {
-      const cleanUrlObj = new URL(url);
-      cleanUrlObj.searchParams.delete('_gl');
-      cleanUrlObj.searchParams.delete('_gcl_au');
-      cleanUrlObj.searchParams.delete('fbclid');
-      url = cleanUrlObj.toString();
-    } catch (e) {}
+      const parsedUrl = new URL(url);
+      // Czyszczenie parametrów śledzących Facebooka i Google Analytics
+      parsedUrl.search = ''; 
+      url = parsedUrl.toString();
+      logMessage(`Oczyszczony URL: ${url}`);
+    } catch (e) {
+      logMessage('Błąd parsowania URL, używam oryginalnego');
+    }
 
     let extractedText = '';
 
-    // PRÓBA 1: Pobieranie bezpośrednie z realistycznym nagłówkiem przeglądarki
+    // 2. POBIERANIE TREŚCI STRONY
+    // Najpierw próbujemy przez Jina Reader (najlepszy dla artykułów i FB)
     try {
-      logMessage('Pobieranie strony (Próba 1 - Axios)...');
-      const response = await axios.get(url, {
+      logMessage('Pobieranie przez Jina Reader...');
+      const jinaRes = await axios.get(`https://r.jina.ai/${url}`, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'X-With-Generated-Alt': 'true'
         },
-        timeout: 8000
+        timeout: 12000
       });
 
-      if (typeof response.data === 'string') {
-        extractedText = cleanHtml(response.data);
+      if (jinaRes.data && typeof jinaRes.data === 'string' && jinaRes.data.length > 100) {
+        extractedText = jinaRes.data;
+        logMessage('Sukces: Pobrano przez Jina Reader.');
       }
-    } catch (fetchErr) {
-      logMessage('Próba 1 (Axios) nie powiodła się:', fetchErr.message);
+    } catch (e) {
+      logMessage('Jina Reader nie dał rady:', e.message);
     }
 
-    // PRÓBA 2: Pobieranie z wykorzystaniem alternatywnego serwera czytającego
-    if (!extractedText || extractedText.trim().length < 100) {
+    // Fallback: Bezpośredni Axios
+    if (!extractedText || extractedText.length < 100) {
       try {
-        logMessage('Próba 2: Czytnik zapasowy...');
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-        const proxyResponse = await axios.get(proxyUrl, { timeout: 8000 });
+        logMessage('Pobieranie bezpośrednie Axios...');
+        const response = await axios.get(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8'
+          },
+          timeout: 10000
+        });
 
-        if (proxyResponse.data && typeof proxyResponse.data === 'string') {
-          extractedText = cleanHtml(proxyResponse.data);
-          logMessage('Sukces pobierania z proxy zapasowego!');
+        if (typeof response.data === 'string') {
+          extractedText = response.data
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+            .replace(/<[^>]+>/g, '\n')
+            .replace(/\n\s*\n/g, '\n');
         }
-      } catch (proxyErr) {
-        logMessage('Błąd czytnika zapasowego:', proxyErr.message);
+      } catch (axiosErr) {
+        logMessage('Axios zgłosił błąd:', axiosErr.message);
       }
     }
 
-    // Jeśli strona całkowicie zablokowała pobieranie
+    // Walidacja czy cokolwiek udało się pobrać
     if (!extractedText || extractedText.trim().length < 50) {
-      logMessage('BŁĄD: Strona jest zablokowana przez zabezpieczenia antybotowe.');
+      logMessage('BŁĄD: Brak treści do analizy.');
       return res.status(422).json({ 
-        error: 'Strona zablokowana lub nieobsługiwana',
-        details: 'Ten portal stosuje zabezpieczenia antybotowe i blokuje automatyczne pobieranie wydarzeń.'
+        error: 'Strona zablokowana lub brak treści',
+        details: 'Portal blokuje automatyczny odczyt z serwerów zewnętrznych.'
       });
     }
 
+    // 3. STRUKTURA SCHEMA DLA GEMINI
     const schema = {
       type: SchemaType.OBJECT,
       properties: {
         title: { type: SchemaType.STRING, description: 'Nazwa wydarzenia' },
         location: { type: SchemaType.STRING, description: 'Pełny adres lub nazwa miejsca i miasto' },
-        source_url: { type: SchemaType.STRING, description: 'Link źródłowy podany przez użytkownika' },
+        source_url: { type: SchemaType.STRING, description: 'Link źródłowy' },
         days: {
           type: SchemaType.ARRAY,
           items: {
@@ -105,53 +116,58 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    logMessage('Wysyłanie zapytania do Gemini...');
-    
-    // Oficjalny model z aktualnej wersji API
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: schema
-      }
-    });
-
-    const prompt = `Przeanalizuj poniższy adres URL oraz treść strony i wyciągnij szczegóły wydarzenia.
-
-Strona URL: ${url}
-Treść strony:
-${extractedText}
+    const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
+URL: ${url}
+Tekst strony:
+${extractedText.slice(0, 30000)}
 
 ZASADY:
-1. Rok wydarzenia: Podany w treści lub zakładasz 2026.
-2. Przelicz godziny na strefę czasową UTC (Polska w okresie letnim, od końca marca do końca października, używa UTC+2, zatem odejmij 2 godziny od podanych godzin lokalnych; w zimowym UTC+1, odejmij 1 godzinę).
-3. Podziel wydarzenie na osobne dni, jeśli w tekście są podane osobne godziny dla każdego dnia.
-4. Formatuj daty jako ISO z oznaczeniem UTC (np. 2026-10-23T09:00:00.000Z).`;
+1. Rok: Podany w tekście lub załóż 2026.
+2. Godziny UTC: Przelicz polski czas (czas letni: odejmij 2h od podanej godziny; czas zimowy: odejmij 1h).
+3. Zwróć JSON zgodny ze schematem.`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    // 4. BEZPIECZNE WYWOŁANIE GEMINI (FALLBACK MODELI)
+    // Zamiast jednej nazwy, próbujemy stabilnych identyfikatorów po kolei
+    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
+    let responseText = null;
+    let lastError = null;
 
-    logMessage('Odpowiedź z Gemini przetworzona pomyślnie.');
+    for (const modelName of candidateModels) {
+      try {
+        logMessage(`Próba wywołania Gemini z modelem: ${modelName}...`);
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: schema
+          }
+        });
+
+        const result = await model.generateContent(promptText);
+        responseText = result.response.text();
+        logMessage(`Sukces! Odpowiedział model: ${modelName}`);
+        break; // Udało się, wychodzimy z pętli!
+      } catch (err) {
+        logMessage(`Błąd z modelem ${modelName}: ${err.message}`);
+        lastError = err;
+      }
+    }
+
+    if (!responseText) {
+      throw lastError || new Error('Żaden model Gemini nie odpowiedział pomyślnie.');
+    }
+
     const eventData = JSON.parse(responseText);
     res.json(eventData);
 
   } catch (error) {
     logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
     res.status(500).json({ 
-      error: 'Błąd przetwarzania wydarzenia', 
-      details: 'Wystąpił nieoczekiwany problem podczas analizy strony przez AI.' 
+      error: 'Błąd przetwarzaania wydarzenia', 
+      details: error.message 
     });
   }
 });
 
-function cleanHtml(html) {
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/<[^>]+>/g, '\n')
-    .replace(/\n\s*\n/g, '\n')
-    .slice(0, 35000);
-}
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Aplikacja Urliqo działa na porcie ${PORT}`));
+app.listen(PORT, () => console.log(`Urliqo działa na porcie ${PORT}`));
