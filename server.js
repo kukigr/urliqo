@@ -2,6 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import https from 'https';
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 
 dotenv.config();
@@ -18,6 +19,9 @@ function logMessage(message, data = null) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Agent ignorujący ew. błędy certyfikatów SSL na niektórych polskich stronach
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+
 app.post('/api/parse-event', async (req, res) => {
   try {
     let { url } = req.body;
@@ -28,69 +32,70 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // Uczyszczenie URL z długich parametrów śledzących Analytics / Google Ads
+    // Bezpieczne czyszczenie parametrów śledzących bez psujących zmian w ścieżce
     try {
-      const cleanUrlObj = new URL(url);
-      cleanUrlObj.searchParams.delete('_gl');
-      cleanUrlObj.searchParams.delete('_gcl_au');
-      cleanUrlObj.searchParams.delete('fbclid');
-      url = cleanUrlObj.toString();
+      const parsedUrl = new URL(url);
+      if (parsedUrl.search) {
+        parsedUrl.searchParams.delete('_gl');
+        parsedUrl.searchParams.delete('_gcl_au');
+        parsedUrl.searchParams.delete('fbclid');
+        url = parsedUrl.toString();
+      }
     } catch (e) {
-      // Jeśli URL jest niestandardowy, zostawiamy oryginalny
+      // W razie problemów zostawiamy oryginalny URL
     }
 
     let extractedText = '';
 
-    // PROBA 1: Pobieranie przez Axios z pełnymi nagłówkami najnowszej przeglądarki
+    // PROBA 1: Pobieranie przez Axios
     try {
       logMessage('Pobieranie strony (Próba 1 - Axios)...');
       const response = await axios.get(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Cache-Control': 'no-cache'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7'
         },
-        timeout: 8000
+        timeout: 10000,
+        maxRedirects: 5,
+        httpsAgent: httpsAgent
       });
 
-      // Bezpieczniejsze usuwanie skryptów zachowujące znaki nowej linii
-      extractedText = response.data
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-        .replace(/<[^>]+>/g, '\n')
-        .replace(/\n\s*\n/g, '\n')
-        .slice(0, 40000);
-
+      if (typeof response.data === 'string') {
+        extractedText = response.data
+          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .slice(0, 35000);
+      }
     } catch (fetchErr) {
       logMessage('Próba 1 (Axios) nie powiodła się:', fetchErr.message);
     }
 
-    // PROBA 2: Czytnik Jina AI dla trudnych stron (ToBilet / Cloudflare / Single Page App)
-    if (!extractedText || extractedText.trim().length < 150) {
+    // PROBA 2: Czytnik Jina AI dla trudnych stron
+    if (!extractedText || extractedText.trim().length < 50) {
       try {
-        logMessage('Próba 2: Używanie Jina AI Reader dla stron dynamicznych...');
+        logMessage('Próba 2: Używanie Jina AI Reader...');
         const jinaUrl = `https://r.jina.ai/${url}`;
         const jinaResponse = await axios.get(jinaUrl, { 
-          headers: {
-            'X-With-Generated-Alt': 'true',
-            'Accept': 'text/plain'
-          },
+          headers: { 'Accept': 'text/plain' },
           timeout: 15000 
         });
 
-        extractedText = typeof jinaResponse.data === 'string' 
-          ? jinaResponse.data.slice(0, 40000) 
-          : JSON.stringify(jinaResponse.data).slice(0, 40000);
-
-        logMessage('Sukces Jina AI Reader!');
+        if (jinaResponse.data) {
+          extractedText = typeof jinaResponse.data === 'string' 
+            ? jinaResponse.data.slice(0, 35000) 
+            : JSON.stringify(jinaResponse.data).slice(0, 35000);
+          logMessage('Sukces Jina AI Reader!');
+        }
       } catch (jinaErr) {
         logMessage('Błąd Jina AI Reader:', jinaErr.message);
       }
     }
 
-    // Jeśli strona całkowicie zablokowała dostęp bota
-    if (!extractedText || extractedText.trim().length < 50) {
+    // Jeśli obie metody nie przyniosły efektu
+    if (!extractedText || extractedText.trim().length < 30) {
       logMessage('BŁĄD: Strona jest zablokowana przez zabezpieczenia antybotowe.');
       return res.status(422).json({ 
         error: 'Strona zablokowana lub nieobsługiwana',
@@ -137,8 +142,8 @@ ${extractedText}
 
 ZASADY:
 1. Rok wydarzenia: Podany w treści lub zakładasz 2026.
-2. Przelicz godziny na strefę czasową UTC (Polska w okresie letnim, czyli od końca marca do końca października, używa UTC+2, zatem odejmij 2 godziny od podanych godzin lokalnych).
-3. Podziel wydarzenie na osobne dni, jeśli w tekście są podane osobne godziny dla każdego dnia (np. Piątek 11:00-20:00, Sobota 9:00-20:00, Niedziela 9:00-18:00).
+2. Przelicz godziny na strefę czasową UTC (Polska w okresie letnim, od końca marca do końca października, używa UTC+2, zatem odejmij 2 godziny od podanych godzin lokalnych; w zimowym UTC+1, odejmij 1 godzinę).
+3. Podziel wydarzenie na osobne dni, jeśli w tekście są podane osobne godziny dla każdego dnia.
 4. Formatuj daty jako ISO z oznaczeniem UTC (np. 2026-10-23T09:00:00.000Z).`;
 
     const result = await model.generateContent(prompt);
