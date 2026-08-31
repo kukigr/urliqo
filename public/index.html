@@ -76,7 +76,6 @@
             border-color: #1877f2;
         }
 
-        /* Przycisk czyszczenia wewnątrz pola tekstowego */
         .btn-clear {
             position: absolute;
             right: 10px;
@@ -123,7 +122,6 @@
             cursor: not-allowed;
         }
 
-        /* Loader z kręcącą się klepsydrą */
         .loader {
             display: none;
             text-align: center;
@@ -294,12 +292,10 @@
         const eventSource = document.getElementById('eventSource');
         const daysList = document.getElementById('daysList');
 
-        // Pokazuj/ukrywaj przycisk "Wyczyść" zależnie od wpisanego tekstu
         urlInput.addEventListener('input', () => {
             btnClear.style.display = urlInput.value.length > 0 ? 'flex' : 'none';
         });
 
-        // Obsługa kliknięcia "Wyczyść"
         btnClear.addEventListener('click', () => {
             urlInput.value = '';
             btnClear.style.display = 'none';
@@ -314,7 +310,6 @@
 
             if (!url) return;
 
-            // Reset stanu
             errorMessage.style.display = 'none';
             results.style.display = 'none';
             loader.style.display = 'block';
@@ -354,7 +349,6 @@
             eventTitle.textContent = data.title;
             eventLocation.textContent = data.location ? `📍 ${data.location}` : '📍 Brak podanej lokalizacji';
 
-            // Generowanie klikalnego linku źródłowego na stronie
             const rawUrl = data.source_url || urlInput.value.trim();
             const formattedSourceUrl = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`;
             eventSource.innerHTML = `🔗 Wydarzenie wygenerowane z: <a href="${formattedSourceUrl}" target="_blank" rel="noopener noreferrer">${formattedSourceUrl}</a>`;
@@ -371,10 +365,10 @@
                 const gCalStart = startDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
                 const gCalEnd = endDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
 
-                // Dodano \n przed adresem URL w opisie, co zmusza Kalendarz Google do zamiany tekstu w aktywny link
-                const detailsText = `Wydarzenie wygenerowane z:\n${formattedSourceUrl}`;
+                // Generowanie HTML w opisach dla Google Calendar (wymuszenie hiperłącza)
+                const detailsHtml = `Wydarzenie wygenerowane z:\n<a href="${formattedSourceUrl}">${formattedSourceUrl}</a>`;
 
-                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent(detailsText)}&location=${encodeURIComponent(data.location || '')}`;
+                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent(detailsHtml)}&location=${encodeURIComponent(data.location || '')}`;
                 
                 const dayCard = document.createElement('div');
                 dayCard.className = 'day-card';
