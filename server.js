@@ -27,19 +27,21 @@ app.post('/api/parse-event', async (req, res) => {
       return res.status(400).json({ error: 'Nie podano adresu URL.' });
     }
 
-    // 1. Oczyszczanie linku Facebooka z parametrów śledzących
+    // Bezpieczne czyszczenie linku Facebooka
+    let cleanUrl = url;
     try {
-      const cleanUrlObj = new URL(url);
-      cleanUrlObj.search = '';
-      url = cleanUrlObj.toString();
-      logMessage(`Oczyszczony URL: ${url}`);
+      const parsedUrl = new URL(url);
+      if (parsedUrl.hostname.includes('facebook.com')) {
+        parsedUrl.search = '';
+        cleanUrl = parsedUrl.toString();
+      }
     } catch (e) {
-      logMessage('Nie udało się oczyścić URL, używam oryginalnego.');
+      logMessage('Nie udało się sparsować URL jako wyczyścić, używam oryginału');
     }
 
     let extractedText = '';
 
-    // 2. Pobieranie treści przez Jina Reader
+    // Pobieranie treści przez Jina Reader
     try {
       logMessage('Pobieranie przez Jina Reader...');
       const headers = {
@@ -52,7 +54,7 @@ app.post('/api/parse-event', async (req, res) => {
         headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
       }
 
-      const jinaRes = await axios.get(`https://r.jina.ai/${url}`, {
+      const jinaRes = await axios.get(`https://r.jina.ai/${cleanUrl}`, {
         headers,
         timeout: 15000
       });
@@ -62,14 +64,14 @@ app.post('/api/parse-event', async (req, res) => {
         logMessage('Sukces: Pobrano treść przez Jina Reader.');
       }
     } catch (e) {
-      logMessage('Jina Reader zgłosił błąd:', e.response ? `Status ${e.response.status}` : e.message);
+      logMessage('Jina Reader zgłosił błąd:', e.message);
     }
 
-    // 3. Fallback: Pobieranie przez otwarte proxy
+    // Zapasowe proxy
     if (!extractedText || extractedText.length < 100) {
       try {
         logMessage('Pobieranie przez zapasowe proxy CORS...');
-        const proxyRes = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, {
+        const proxyRes = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(cleanUrl)}`, {
           timeout: 10000
         });
 
@@ -89,11 +91,11 @@ app.post('/api/parse-event', async (req, res) => {
       logMessage('BŁĄD: Brak treści do analizy.');
       return res.status(422).json({ 
         error: 'Strona zablokowana lub brak treści',
-        details: 'Portal zablokował automatyczny odczyt z serwera.'
+        details: 'Nie udało się odczytać treści z podanego adresu.'
       });
     }
 
-    // 4. Schema odpowiedzi dla Gemini
+    // Schema Gemini
     const schema = {
       type: SchemaType.OBJECT,
       properties: {
@@ -116,18 +118,13 @@ app.post('/api/parse-event', async (req, res) => {
       required: ['title', 'location', 'source_url', 'days']
     };
 
-    // 5. Wywołanie Gemini z odpornością na zmiany modeli (od najnowszych 3.x/2.x)
     const activeModels = [
-      'gemini-3.7-flash',
-      'gemini-3.6-flash',
       'gemini-2.5-flash',
-      'gemini-3.5-flash'
+      'gemini-1.5-flash'
     ];
 
     let responseText = null;
     let lastError = null;
-
-    logMessage('Wysyłanie zapytania do Gemini...');
 
     for (const modelName of activeModels) {
       try {
@@ -141,7 +138,7 @@ app.post('/api/parse-event', async (req, res) => {
         });
 
         const promptText = `Przeanalizuj treść i wyciągnij dane o wydarzeniu.
-URL: ${url}
+URL: ${cleanUrl}
 Tekst strony:
 ${extractedText.slice(0, 30000)}
 
@@ -161,22 +158,22 @@ ZASADY:
     }
 
     if (!responseText) {
-      throw lastError || new Error('Brak odpowiedzi z API Gemini');
+      return res.status(500).json({
+        error: 'Błąd API AI',
+        details: lastError ? lastError.message : 'Żaden z modeli Gemini nie zwrócił wyniku.'
+      });
     }
 
-    logMessage('Pomyślnie przetworzono wydarzenie.');
-    
-    // JEDYNA ZMIANA: Doklejamy link źródłowy do wyjściowego obiektu JSON przed wysłaniem do frontendu
     const parsedData = JSON.parse(responseText);
-    parsedData.source_url = url;
+    parsedData.source_url = cleanUrl;
     
-    res.json(parsedData);
+    return res.json(parsedData);
 
   } catch (error) {
     logMessage('KRYTYCZNY BŁĄD SERWERA:', error);
-    res.status(500).json({ 
-      error: 'Błąd przetwarzania wydarzenia', 
-      details: error.message 
+    return res.status(500).json({ 
+      error: 'Błąd serwera', 
+      details: error.message || 'Wystąpił nieoczekiwany błąd.'
     });
   }
 });
