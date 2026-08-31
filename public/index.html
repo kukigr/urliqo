@@ -214,6 +214,30 @@
         .btn-calendar:hover {
             background-color: #36a420;
         }
+
+        #loader {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .spinner-icon {
+          width: 18px;
+          height: 18px;
+          border: 3px solid rgba(0, 0, 0, 0.1);
+          border-top-color: #007bff; /* Kolor obracającego się paska */
+          border-radius: 50%;
+          animation: spin 0.8s infinite linear;
+        }
+        
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+
+        
     </style>
 </head>
 <body>
@@ -234,7 +258,9 @@
             <button type="submit" class="btn-submit" id="submitBtn">Generuj linki do Kalendarza</button>
         </form>
 
-        <div class="loader" id="loader">Analizowanie strony przez AI...</div>
+        <div class="loader" id="loader">
+             <span class="spinner-icon"></span> Analizowanie strony przez AI...
+        </div>
         
         <div class="error-message" id="errorMessage">
             <div id="errorTitle"></div>
@@ -334,8 +360,10 @@
                 const gCalStart = startDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
                 const gCalEnd = endDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
 
-                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent('Wydarzenie wygenerowane z: ' + data.source_url)}&location=${encodeURIComponent(data.location || '')}`;
+                const formattedSourceUrl = data.source_url.startsWith('http') ? data.source_url : `https://${data.source_url}`;
 
+                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent('Wydarzenie wygenerowane z: ' + formattedSourceUrl)}&location=${encodeURIComponent(data.location || '')}`;
+                
                 const dayCard = document.createElement('div');
                 dayCard.className = 'day-card';
                 dayCard.innerHTML = `
