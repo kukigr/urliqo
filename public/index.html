@@ -123,6 +123,7 @@
             cursor: not-allowed;
         }
 
+        /* Loader z kręcącą się klepsydrą */
         .loader {
             display: none;
             text-align: center;
@@ -130,6 +131,17 @@
             font-size: 14px;
             color: #1877f2;
             font-weight: 500;
+        }
+
+        .hourglass-icon {
+            display: inline-block;
+            animation: spin 1.5s infinite linear;
+            margin-right: 6px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .error-message {
@@ -163,7 +175,23 @@
         .event-location {
             font-size: 13px;
             color: #606770;
+            margin-bottom: 6px;
+        }
+
+        .event-source {
+            font-size: 12px;
+            color: #606770;
             margin-bottom: 16px;
+            word-break: break-all;
+        }
+
+        .event-source a {
+            color: #1877f2;
+            text-decoration: none;
+        }
+
+        .event-source a:hover {
+            text-decoration: underline;
         }
 
         .days-list {
@@ -214,8 +242,6 @@
         .btn-calendar:hover {
             background-color: #36a420;
         }
-
-               
     </style>
 </head>
 <body>
@@ -236,7 +262,9 @@
             <button type="submit" class="btn-submit" id="submitBtn">Generuj linki do Kalendarza</button>
         </form>
 
-        <div class="loader" id="loader">Analizowanie strony przez AI...</div>
+        <div class="loader" id="loader">
+            <span class="hourglass-icon">⏳</span> Analizowanie strony przez AI...
+        </div>
         
         <div class="error-message" id="errorMessage">
             <div id="errorTitle"></div>
@@ -246,6 +274,7 @@
         <div class="results" id="results">
             <div class="event-title" id="eventTitle"></div>
             <div class="event-location" id="eventLocation"></div>
+            <div class="event-source" id="eventSource"></div>
             <div class="days-list" id="daysList"></div>
         </div>
     </div>
@@ -262,6 +291,7 @@
         const results = document.getElementById('results');
         const eventTitle = document.getElementById('eventTitle');
         const eventLocation = document.getElementById('eventLocation');
+        const eventSource = document.getElementById('eventSource');
         const daysList = document.getElementById('daysList');
 
         // Pokazuj/ukrywaj przycisk "Wyczyść" zależnie od wpisanego tekstu
@@ -324,6 +354,11 @@
             eventTitle.textContent = data.title;
             eventLocation.textContent = data.location ? `📍 ${data.location}` : '📍 Brak podanej lokalizacji';
 
+            // Generowanie klikalnego linku źródłowego na stronie
+            const rawUrl = data.source_url || urlInput.value.trim();
+            const formattedSourceUrl = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`;
+            eventSource.innerHTML = `🔗 Wydarzenie wygenerowane z: <a href="${formattedSourceUrl}" target="_blank" rel="noopener noreferrer">${formattedSourceUrl}</a>`;
+
             daysList.innerHTML = '';
 
             data.days.forEach(day => {
@@ -335,8 +370,6 @@
 
                 const gCalStart = startDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
                 const gCalEnd = endDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
-
-                const formattedSourceUrl = data.source_url.startsWith('http') ? data.source_url : `https://${data.source_url}`;
 
                 const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent('Wydarzenie wygenerowane z: ' + formattedSourceUrl)}&location=${encodeURIComponent(data.location || '')}`;
                 
