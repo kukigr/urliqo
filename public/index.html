@@ -365,10 +365,10 @@
                 const gCalStart = startDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
                 const gCalEnd = endDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
 
-                // Generowanie HTML w opisach dla Google Calendar (wymuszenie hiperłącza)
-                const detailsHtml = `Wydarzenie wygenerowane z:\n<a href="${formattedSourceUrl}">${formattedSourceUrl}</a>`;
+                // Format z podwójną nową linią i czystym URL wyłapywanym automatycznie przez parser Google
+                const detailsText = `Wydarzenie wygenerowane z:\n\n${formattedSourceUrl}`;
 
-                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent(detailsHtml)}&location=${encodeURIComponent(data.location || '')}`;
+                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent(detailsText)}&location=${encodeURIComponent(data.location || '')}`;
                 
                 const dayCard = document.createElement('div');
                 dayCard.className = 'day-card';
