@@ -371,7 +371,10 @@
                 const gCalStart = startDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
                 const gCalEnd = endDate.toISOString().replace(/-|:|\.\d\d\d/g, '');
 
-                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent('Wydarzenie wygenerowane z: ' + formattedSourceUrl)}&location=${encodeURIComponent(data.location || '')}`;
+                // Dodano \n przed adresem URL w opisie, co zmusza Kalendarz Google do zamiany tekstu w aktywny link
+                const detailsText = `Wydarzenie wygenerowane z:\n${formattedSourceUrl}`;
+
+                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(data.title)}&dates=${gCalStart}/${gCalEnd}&details=${encodeURIComponent(detailsText)}&location=${encodeURIComponent(data.location || '')}`;
                 
                 const dayCard = document.createElement('div');
                 dayCard.className = 'day-card';
